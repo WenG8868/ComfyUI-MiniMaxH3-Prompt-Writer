@@ -104,25 +104,29 @@ class ModelDiscoveryTests(unittest.TestCase):
         ):
             return catalog.find_model(str(model_path.resolve()))
 
-    def test_lowercase_roots_support_discovery_and_lookup_without_duplicates(self):
+    def test_registered_roots_support_discovery_and_lookup_without_duplicates(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             model = root / "gemma-4-test-Q4.gguf"
             write_model(model)
             write_projector(root / "mmproj-BF16.gguf")
-            for upper in ([], [str(root)]):
+            for categories in (("LLM",), ("llm",), ("LLM", "llm"), ()):
+                registered = {name: ([str(root)], set()) for name in categories}
                 with (
-                    self.subTest(upper=upper),
+                    self.subTest(categories=categories),
                     patch.object(catalog.folder_paths, "get_folder_paths",
-                                 side_effect=lambda name: upper if name == "LLM" else [str(root)]),
+                                 side_effect=lambda name: registered[name][0][:]),
                     patch.object(catalog.importlib.util, "find_spec", return_value=object()),
                     patch.object(catalog, "_runtime_version", return_value="0.3.35"),
                 ):
                     models, diagnostics = catalog.discover_models_with_diagnostics()
-                    self.assertEqual(len(models), 1)
-                    self.assertEqual(len(diagnostics["roots"]), 1)
-                    self.assertEqual(diagnostics["roots"][0]["path"], str(root.resolve()))
-                    self.assertIsNotNone(catalog.find_model(str(model)))
+                    self.assertEqual(len(models), int(bool(categories)))
+                    self.assertEqual(len(diagnostics["roots"]), int(bool(categories)))
+                    if categories:
+                        self.assertEqual(diagnostics["roots"][0]["path"], str(root.resolve()))
+                        self.assertIsNotNone(catalog.find_model(str(model)))
+                    else:
+                        self.assertIsNone(catalog.find_model(str(model)))
                     self.assertIsNone(catalog.find_model(str(root.parent / "outside.gguf")))
 
     def test_explicit_projector_is_validated_without_changing_automatic_pairing(self):

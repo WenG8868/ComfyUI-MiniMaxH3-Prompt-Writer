@@ -304,7 +304,11 @@ def _model_roots() -> list[Path]:
     roots = []
     seen = set()
     for category in ("LLM", "llm"):
-        for value in folder_paths.get_folder_paths(category):
+        try:
+            paths = folder_paths.get_folder_paths(category)
+        except KeyError:
+            continue
+        for value in paths:
             root = Path(value).resolve()
             if root not in seen:
                 seen.add(root)
