@@ -1,0 +1,153 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { Window } from "happy-dom";
+
+import {
+  LANGUAGE_PREFERENCES,
+  configureI18n,
+  getLanguagePreference,
+  getLocale,
+  hasTranslation,
+  localizedError,
+  lookupTranslation,
+  messageText,
+  msg,
+  normalizeLanguagePreference,
+  onLocaleChange,
+  resolveLocale,
+  setLanguagePreference,
+  t,
+  translateDom,
+} from "../web/i18n.js";
+import { messages as en } from "../web/locales/en.js";
+import { messages as zhCN } from "../web/locales/zh-CN.js";
+import { createStudioState, loadUserPreferences, saveUserPreferences } from "../web/studio_state.js";
+
+const window = new Window();
+const root = window.document.createElement("div");
+window.document.body.append(root);
+
+test("dictionaries have identical non-empty key sets", () => {
+  assert.deepEqual(Object.keys(en).sort(), Object.keys(zhCN).sort());
+  for (const dictionary of [en, zhCN]) {
+    for (const [key, value] of Object.entries(dictionary)) {
+      assert.equal(typeof value, "string", key);
+      assert.ok(value.trim().length > 0, key);
+    }
+  }
+});
+
+test("language preferences accept only the three supported values", () => {
+  assert.deepEqual([...LANGUAGE_PREFERENCES], ["auto", "en", "zh-CN"]);
+  assert.equal(normalizeLanguagePreference("zh-CN"), "zh-CN");
+  assert.equal(normalizeLanguagePreference("EN"), "auto");
+  assert.equal(normalizeLanguagePreference(null), "auto");
+  assert.equal(normalizeLanguagePreference("fr"), "auto");
+});
+
+test("auto resolves ComfyUI locale first, then navigator language", () => {
+  const comfy = (locale) => ({ ui: { settings: { getSettingValue: () => locale } } });
+  assert.equal(resolveLocale("auto", { app: comfy("zh-CN"), navigatorLanguage: "en-US" }), "zh-CN");
+  assert.equal(resolveLocale("auto", { app: comfy("zh-TW"), navigatorLanguage: "en-US" }), "zh-CN");
+  assert.equal(resolveLocale("auto", { app: comfy("fr-FR"), navigatorLanguage: "zh-CN" }), "en");
+  assert.equal(resolveLocale("auto", { app: comfy(""), navigatorLanguage: "zh-Hans" }), "zh-CN");
+  assert.equal(resolveLocale("auto", { navigatorLanguage: "de-DE" }), "en");
+  const throwing = { ui: { settings: { getSettingValue: () => { throw new Error("not available"); } } } };
+  assert.equal(resolveLocale("auto", { app: throwing, navigatorLanguage: "zh-Hant" }), "zh-CN");
+  assert.equal(resolveLocale("en", { app: comfy("zh-CN") }), "en");
+  assert.equal(resolveLocale("zh-CN", { app: comfy("en-US") }), "zh-CN");
+});
+
+test("t interpolates parameters and falls back predictably", () => {
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  assert.equal(t("meta.prompt_length", { characters: "12", words: "3" }), "12 characters · 3 words");
+  configureI18n({ preference: "zh-CN", root });
+  assert.equal(t("meta.prompt_length", { characters: "12", words: "3" }), "12 字符 · 3 词");
+  assert.equal(t("missing.key"), "missing.key");
+  assert.equal(
+    lookupTranslation("zh-CN", "only.en", { en: { "only.en": "English only" }, "zh-CN": {} }),
+    "English only",
+  );
+  assert.equal(lookupTranslation("zh-CN", "missing.key", { en: {}, "zh-CN": {} }), "missing.key");
+  assert.equal(hasTranslation("common.cancel"), true);
+  assert.equal(hasTranslation("missing.key"), false);
+  assert.equal(messageText(msg("common.cancel")), "取消");
+  assert.equal(messageText("raw backend text"), "raw backend text");
+  assert.equal(messageText(null), "");
+});
+
+test("setLanguagePreference updates state, document lang, and notifies once", () => {
+  let calls = 0;
+  const unsubscribe = onLocaleChange(() => { calls += 1; });
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  assert.equal(setLanguagePreference("zh-CN"), "zh-CN");
+  assert.equal(getLocale(), "zh-CN");
+  assert.equal(getLanguagePreference(), "zh-CN");
+  assert.equal(window.document.documentElement.lang, "zh-CN");
+  assert.equal(calls, 1);
+  unsubscribe();
+  setLanguagePreference("en");
+  assert.equal(calls, 1);
+});
+
+test("translateDom translates text and attributes but never values or raw output", () => {
+  configureI18n({ preference: "zh-CN", root });
+  root.innerHTML = `
+    <button data-i18n="common.cancel" title="old" data-i18n-title="common.close"
+      aria-label="old" data-i18n-aria-label="common.language"></button>
+    <input data-i18n="common.cancel" data-i18n-placeholder="common.language" value="keep me">
+    <textarea data-i18n="common.close" data-i18n-placeholder="common.language">keep text</textarea>
+    <select data-i18n="common.close"><option>fixed</option></select>
+    <span data-output data-i18n="common.cancel">generated output</span>
+    <pre data-seq-reader-text data-i18n="common.cancel">sequence output</pre>
+  `;
+  translateDom(root);
+  const button = root.querySelector("button");
+  assert.equal(button.textContent, "取消");
+  assert.equal(button.title, "关闭");
+  assert.equal(button.getAttribute("aria-label"), "语言");
+  const input = root.querySelector("input");
+  assert.equal(input.value, "keep me");
+  assert.equal(input.getAttribute("placeholder"), "语言");
+  assert.equal(input.textContent, "");
+  const textarea = root.querySelector("textarea");
+  assert.equal(textarea.value, "keep text");
+  const select = root.querySelector("select");
+  assert.equal(select.textContent.trim(), "fixed");
+  assert.equal(root.querySelector("[data-output]").textContent, "generated output");
+  assert.equal(root.querySelector("[data-seq-reader-text]").textContent, "sequence output");
+});
+
+test("localizedError maps codes and preserves English technical details", () => {
+  configureI18n({ preference: "zh-CN", root });
+  const known = localizedError(Object.assign(new Error("Backend said busy"), {
+    code: "GENERATION_BUSY",
+    details: { queue: 1 },
+  }));
+  assert.equal(known.message, zhCN["errors.GENERATION_BUSY"]);
+  assert.match(known.technical, /Backend said busy/);
+  assert.match(known.technical, /"queue": 1/);
+  const unknown = localizedError(Object.assign(new Error("Model exploded"), { code: "SOMETHING_NEW" }));
+  assert.equal(unknown.message, zhCN["errors.UNKNOWN"]);
+  assert.match(unknown.technical, /Model exploded/);
+  const noCode = localizedError(new Error("plain failure"));
+  assert.equal(noCode.message, zhCN["errors.UNKNOWN"]);
+  assert.equal(noCode.technical, "plain failure");
+});
+
+test("language preference round-trips through user preferences", () => {
+  const data = new Map([["h3ps-preferences-v1", JSON.stringify({ version: 1, language: "zh-CN" })]]);
+  const storage = {
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => data.set(key, value),
+  };
+  assert.equal(loadUserPreferences(storage).language, "zh-CN");
+  const state = createStudioState({ sessionId: "test", storage });
+  assert.equal(state.language, "zh-CN");
+  saveUserPreferences(storage, { ...state, language: "en" });
+  assert.equal(JSON.parse(data.get("h3ps-preferences-v1")).language, "en");
+  data.set("h3ps-preferences-v1", JSON.stringify({ version: 1, language: "fr" }));
+  assert.equal(loadUserPreferences(storage).language, "auto");
+  data.set("h3ps-preferences-v1", JSON.stringify({ version: 1 }));
+  assert.equal(loadUserPreferences(storage).language, "auto");
+});

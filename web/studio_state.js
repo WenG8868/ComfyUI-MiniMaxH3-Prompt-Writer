@@ -9,6 +9,7 @@ export const USER_PREFERENCES_STORAGE_KEY = "h3ps-preferences-v1";
 export const MODE_DRAFTS_STORAGE_KEY = "h3ps-mode-drafts-v1";
 export const INTERFACE_SIZES = ["100", "110", "120", "125"];
 
+const LANGUAGE_PREFERENCES = ["auto", "en", "zh-CN"];
 const MODES = ["T2VA", "I2VA", "FL2VA", "L2VA", "Reference", "Music3"];
 const ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"];
 const PROVIDERS = ["direct", "external", "ollama", "api"];
@@ -112,6 +113,7 @@ export function loadUserPreferences(storage = globalThis.localStorage) {
       vram_handoff: value.vram_handoff === true,
       theme: value.theme === "light" ? "light" : "dark",
       interface_size: INTERFACE_SIZES.includes(value.interface_size) ? value.interface_size : "100",
+      language: LANGUAGE_PREFERENCES.includes(value.language) ? value.language : "auto",
     };
   } catch {
     return null;
@@ -139,6 +141,7 @@ export function saveUserPreferences(storage, state) {
     vram_handoff: state.vramHandoff === true,
     theme: state.theme === "light" ? "light" : "dark",
     interface_size: INTERFACE_SIZES.includes(state.interfaceSize) ? state.interfaceSize : "100",
+    language: LANGUAGE_PREFERENCES.includes(state.language) ? state.language : "auto",
   };
   storage?.setItem(USER_PREFERENCES_STORAGE_KEY, JSON.stringify(safe));
 }
@@ -403,6 +406,7 @@ export function createStudioState({ sessionId, storage = globalThis.localStorage
   const preferences = loadUserPreferences(storage);
   const ollamaHost = loadOllamaHost(storage);
   return {
+    language: preferences?.language || "auto",
     mode: preferences?.mode || "Reference",
     lastVideoMode: preferences?.mode && preferences.mode !== "Music3" ? preferences.mode : "Reference",
     mediaFilter: "all",
