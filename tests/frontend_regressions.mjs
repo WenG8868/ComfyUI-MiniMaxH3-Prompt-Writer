@@ -1320,6 +1320,10 @@ test("provider panels are translation-driven", () => {
   assert.match(mainSource, /t\("providers\.ollama\.get_title"\)/);
   assert.match(mainSource, /t\("providers\.api\.disclosure_title"\)/);
   assert.match(mainSource, /showErrorToast\("toast\.api\.failed\.title"/);
+  const refreshStart = mainSource.indexOf("const refreshLocalizedUi = () => {");
+  const refreshEnd = mainSource.indexOf("onLocaleChange(() => {", refreshStart);
+  assert.ok(refreshStart >= 0 && refreshEnd > refreshStart, "locale refresh hook is present");
+  assert.match(mainSource.slice(refreshStart, refreshEnd), /syncProviderPanelCopy\(\);/);
 });
 
 test("provider panel copy follows locale changes without replacing form state", () => {

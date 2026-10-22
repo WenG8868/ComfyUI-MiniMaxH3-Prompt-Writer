@@ -2625,6 +2625,7 @@ async function connectExternalServer(form) {
   };
   submit.disabled = true;
   submit.textContent = t("providers.external.connecting");
+  submit.dataset.i18n = "providers.external.connecting";
   try {
     const result = await probeExternalServer(config);
     if (studio.externalConnectionAttempt !== attempt || (studio.modelSelectionRevision || 0) !== selectionRevision) return;
@@ -2635,9 +2636,15 @@ async function connectExternalServer(form) {
     saveExternalServerConfig(localStorage, saved);
     studio.models = [...studio.models.filter((model) => model.family !== "external"), result.model];
     selectModel(result.model);
-    const contextSuffix = result.model.context_verified !== false
-      ? ` · ${t("providers.external.context", { tokens: Math.round(result.model.server_context_tokens / 1024) })}` : "";
-    showToast(msg("toast.external.connected.title"), `${result.model.name}${contextSuffix}`);
+    showToast(
+      msg("toast.external.connected.title"),
+      result.model.context_verified !== false
+        ? msg("toast.external.connected.message_context", {
+            model: result.model.name,
+            tokens: Math.round(result.model.server_context_tokens / 1024),
+          })
+        : msg("toast.external.connected.message", { model: result.model.name }),
+    );
   } catch (error) {
     if (studio.externalConnectionAttempt !== attempt || (studio.modelSelectionRevision || 0) !== selectionRevision) return;
     studio.externalServerError = error;
@@ -2647,6 +2654,7 @@ async function connectExternalServer(form) {
     if (studio.externalConnectionAttempt === attempt) {
       submit.disabled = false;
       submit.textContent = t("providers.external.connect");
+      submit.dataset.i18n = "providers.external.connect";
     }
   }
 }
@@ -2684,6 +2692,7 @@ async function connectConfiguredApiProvider(form) {
   };
   submit.disabled = true;
   submit.textContent = t("providers.external.connecting");
+  submit.dataset.i18n = "providers.external.connecting";
   try {
     const result = await probeApiProvider({
       preset: config.preset,
@@ -2723,15 +2732,12 @@ async function connectConfiguredApiProvider(form) {
       syncRuntimeSummary();
       saveUserPreferences(localStorage, studio);
     }
-    const status = model
-      ? t(model.capabilities?.images ? "toast.api.connected.vision" : "toast.api.connected.text")
-      : "";
-    const unverified = result.connection.connection_verified ? "" : t("toast.api.connected.unverified");
+    const messageKey = model
+      ? `toast.api.connected.message.${model.capabilities?.images ? "vision" : "text"}_${result.connection.connection_verified ? "verified" : "unverified"}`
+      : null;
     showToast(
       msg("toast.api.connected.title", { provider: result.connection.provider_name }),
-      model
-        ? t("toast.api.connected.message", { model: model.name, status, unverified })
-        : t("toast.api.connected.no_model"),
+      messageKey ? msg(messageKey, { model: model.name }) : msg("toast.api.connected.no_model"),
     );
   } catch (error) {
     if (studio.apiConnectionAttempt !== attempt || (studio.modelSelectionRevision || 0) !== selectionRevision) return;
@@ -2742,6 +2748,7 @@ async function connectConfiguredApiProvider(form) {
     if (studio.apiConnectionAttempt === attempt) {
       submit.disabled = false;
       submit.textContent = t("providers.api.connect_test");
+      submit.dataset.i18n = "providers.api.connect_test";
     }
   }
 }
@@ -2890,6 +2897,7 @@ async function configureOllamaHost(form) {
   const requestedHost = normalizeOllamaHost(form.elements.host.value);
   submit.disabled = true;
   submit.textContent = t("providers.ollama.checking");
+  submit.dataset.i18n = "providers.ollama.checking";
   try {
     const status = await getOllamaStatus(requestedHost);
     const endpoint = normalizeOllamaHost(status.endpoint || requestedHost);
@@ -2930,6 +2938,7 @@ async function configureOllamaHost(form) {
   } finally {
     submit.disabled = false;
     submit.textContent = t("providers.ollama.apply");
+    submit.dataset.i18n = "providers.ollama.apply";
   }
 }
 
@@ -2943,6 +2952,7 @@ async function refreshOllama({ automatic = false } = {}) {
   if (refreshButton && !automatic) {
     refreshButton.disabled = true;
     refreshButton.textContent = t("providers.ollama.checking");
+    refreshButton.dataset.i18n = "providers.ollama.checking";
   }
   try {
     const requestedHost = studio.ollamaHost;
@@ -2955,13 +2965,14 @@ async function refreshOllama({ automatic = false } = {}) {
     if (model && studio.settingsProvider === "ollama") selectModel(model);
     else renderInferenceSettings();
     if (!automatic && status.state !== "ready") {
+      const bodyKey = studio.ollamaHost !== DEFAULT_OLLAMA_HOST
+        ? "providers.ollama.remote_not_responding"
+        : status.state === "not_installed"
+          ? "toast.ollama.install_hint"
+          : "toast.ollama.start_hint";
       showToast(
         msg(status.state === "not_installed" ? "toast.ollama.not_installed" : "toast.ollama.not_running"),
-        studio.ollamaHost !== DEFAULT_OLLAMA_HOST
-          ? t("providers.ollama.remote_not_responding", { host: studio.ollamaHost })
-          : status.state === "not_installed"
-          ? t("toast.ollama.install_hint")
-          : t("toast.ollama.start_hint"),
+        msg(bodyKey, { host: studio.ollamaHost }),
       );
     }
   } catch (error) {

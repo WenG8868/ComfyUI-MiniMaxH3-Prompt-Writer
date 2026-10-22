@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import test from "node:test";
-import { messageText, msg, t } from "../web/i18n.js";
+import { Window } from "happy-dom";
+import { configureI18n, messageText, msg, setLanguagePreference, t } from "../web/i18n.js";
+import { writeToastContent } from "../web/toast.js";
 
 const source = await readFile(process.env.H3_WRITER_SOURCE || new URL("../web/main.js", import.meta.url), "utf8");
 
@@ -193,7 +195,7 @@ test("an old Composer Add cannot clear a reopened composition", async () => {
   assert.equal(state.open, true);
 });
 
-function providerController(overrides = {}) {
+function providerController(overrides = {}, dependencies = {}) {
   const studio = {
     apiProviderConfig: { preset: "custom" }, apiProviderModels: [], models: [],
     root: { classList: { contains: () => false } }, modelSelectionRevision: 0,
@@ -215,11 +217,13 @@ function providerController(overrides = {}) {
     restoredModelAfterDiscovery: () => null, updatePromptResidency() {},
     setGenerationState: (phase) => { studio.requestBusy = phase === "busy"; },
     refreshGGUFRuntimeDiagnostics() {},
+    ...dependencies,
   });
 }
 
 function providerForm() {
-  return { querySelector: () => ({}), elements: {
+  const submit = { dataset: {} };
+  return { querySelector: () => submit, elements: {
     model_id: { value: "model" }, url: { value: "http://localhost:8080" },
     model: { value: "model" }, api_key: { value: "" },
   } };
@@ -353,4 +357,50 @@ test("discovery probe cannot restore the model selected before a newer selection
   pending.resolve({ model: { id: "external" } });
   await operation;
   assert.equal(api.studio.selectedModel.id, "new");
+});
+
+test("provider connect toast bodies replay after a locale switch", async () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  window.document.body.append(root);
+  const toast = window.document.createElement("div");
+  toast.innerHTML = `<strong data-toast-title></strong><span data-toast-message></span>
+    <details data-toast-details hidden><summary>Technical details</summary><pre></pre></details>
+    <button data-toast-action hidden></button>`;
+  const toasts = [];
+  const capture = (title, message) => toasts.push({ title, message });
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  try {
+    const external = providerController({}, { showToast: capture });
+    external.probeExternalServer = async () => ({ model: {
+      id: "external:llama", name: "llama", endpoint: "http://127.0.0.1:8080",
+      remote_model: "llama", context_verified: true, server_context_tokens: 16384,
+    } });
+    await external.connectExternalServer(providerForm());
+    const externalToast = toasts.pop();
+    writeToastContent(toast, externalToast);
+    assert.equal(toast.querySelector("[data-toast-message]").textContent, "llama · 16K context");
+
+    const api = providerController({}, { showToast: capture });
+    api.probeApiProvider = async () => ({
+      connection: { id: "api:gemini", provider_name: "Gemini", connection_verified: true },
+      model: {
+        id: "api:gemini:pro", name: "gemini-2.5-pro", remote_model: "gemini-2.5-pro",
+        capabilities: { images: true },
+      },
+      models: [],
+    });
+    await api.connectConfiguredApiProvider(providerForm());
+    const apiToast = toasts.pop();
+    writeToastContent(toast, apiToast);
+    assert.equal(toast.querySelector("[data-toast-message]").textContent, "gemini-2.5-pro · vision ready");
+
+    setLanguagePreference("zh-CN");
+    writeToastContent(toast, externalToast);
+    assert.equal(toast.querySelector("[data-toast-message]").textContent, "llama · 16K 上下文");
+    writeToastContent(toast, apiToast);
+    assert.equal(toast.querySelector("[data-toast-message]").textContent, "gemini-2.5-pro · 视觉就绪");
+  } finally {
+    configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  }
 });
