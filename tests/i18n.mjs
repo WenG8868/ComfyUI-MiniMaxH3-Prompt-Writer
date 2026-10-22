@@ -23,6 +23,8 @@ import { messages as en } from "../web/locales/en.js";
 import { messages as zhCN } from "../web/locales/zh-CN.js";
 import { networkError, readApiResponse } from "../web/api/response.js";
 import { createStudioState, loadUserPreferences, saveUserPreferences } from "../web/studio_state.js";
+import { writeToastContent } from "../web/toast.js";
+import { writeStatusContent } from "../web/status.js";
 
 const window = new Window();
 const root = window.document.createElement("div");
@@ -181,6 +183,36 @@ test("legacy users keep auto behavior without writing language until they switch
   assert.equal(Object.hasOwn(JSON.parse(data.get("h3ps-preferences-v1")), "language"), false);
   saveUserPreferences(storage, { ...state, language: "zh-CN", languageChosen: true });
   assert.equal(JSON.parse(data.get("h3ps-preferences-v1")).language, "zh-CN");
+});
+
+test("toast and status descriptors re-render in the active locale", () => {
+  const toast = window.document.createElement("div");
+  toast.innerHTML = `<strong data-toast-title></strong><span data-toast-message></span>
+    <button data-toast-action hidden></button><details data-toast-details hidden><summary>Technical details</summary><pre></pre></details>`;
+  const status = window.document.createElement("div");
+  status.innerHTML = `<strong></strong><span data-status-detail></span>`;
+  const snapshot = {
+    title: msg("common.notice"),
+    message: msg("meta.prompt_length", { characters: "1", words: "2" }),
+    details: "Backend detail",
+    action: { label: msg("common.retry"), onClick() {} },
+  };
+  configureI18n({ preference: "en", root });
+  writeToastContent(toast, snapshot);
+  assert.equal(toast.querySelector("[data-toast-title]").textContent, "Notice");
+  assert.equal(toast.querySelector("[data-toast-message]").textContent, "1 characters · 2 words");
+  assert.equal(toast.querySelector("[data-toast-details] pre").textContent, "Backend detail");
+  assert.equal(toast.querySelector("[data-toast-action]").textContent, "Retry");
+
+  configureI18n({ preference: "zh-CN", root });
+  writeToastContent(toast, snapshot);
+  assert.equal(toast.querySelector("[data-toast-title]").textContent, "提示");
+  assert.equal(toast.querySelector("[data-toast-message]").textContent, "1 字符 · 2 词");
+  assert.equal(toast.querySelector("[data-toast-action]").textContent, "重试");
+
+  writeStatusContent(status, { label: msg("status.generating"), detail: msg("common.cancel"), dots: 2 });
+  assert.equal(status.querySelector("strong").textContent, "正在生成..");
+  assert.equal(status.querySelector("[data-status-detail]").textContent, "取消");
 });
 
 test("network failures map to stable error codes", async () => {

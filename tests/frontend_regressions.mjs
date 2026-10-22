@@ -4,6 +4,9 @@ import "./draft_files.mjs";
 import "./desktop_notifications.mjs";
 import { generationButtonMarkup } from "../web/writer_controls.js";
 import { aspectRatioMarkup, splitMenuMarkup } from "../web/writer_controls.js";
+import { msg, t } from "../web/i18n.js";
+import { writeToastContent } from "../web/toast.js";
+import { writeStatusContent } from "../web/status.js";
 import { settingsMarkup, generateModelSummaryMarkup } from "../web/settings.js";
 import { AUTO_VRAM_TOOLTIP, autoVramControlMarkup } from "../web/vram_handoff.js";
 import './media_visual.mjs';
@@ -1701,7 +1704,7 @@ test("refined media UI has neutral actions, no dead preview flow or reorder thum
   const studio={root:{querySelector:()=>toast}};
   let dismissed=0;
   const show=mainSource.slice(mainSource.indexOf('function showToast('),mainSource.indexOf('function defaultModeDraft('));
-  new Function('studio','hideToast','setTimeout','clearTimeout',show+';showToast("Trim required","Keep this notice",null,null,{dismissOnWorkspaceClick:true});')(studio,()=>dismissed++,(fn,ms)=>timers.push({fn,ms}),()=>{});
+  new Function('studio','hideToast','setTimeout','clearTimeout','writeToastContent',show+';showToast("Trim required","Keep this notice",null,null,{dismissOnWorkspaceClick:true});')(studio,()=>dismissed++,(fn,ms)=>timers.push({fn,ms}),()=>{},writeToastContent);
   assert.equal(timers.length,1);assert.equal(timers[0].ms,0);timers[0].fn();
   assert.equal(studio.toastDismissOnWorkspaceClick,true);
   const rule=mainSource.match(/if \(studio.toastDismissOnWorkspaceClick && !event.target.closest\("\[data-h3ps-toast\]"\)\) hideToast\(\);/)[0];
@@ -1715,7 +1718,7 @@ test("startup generation state has no legacy preview dependency",()=>{
   const start=mainSource.indexOf('function setGenerationState('),end=mainSource.indexOf('function updatePromptResidency(',start);
   const noop=()=>{},node={querySelector:()=>node,querySelectorAll:()=>[],classList:{toggle:noop},innerHTML:''};
   const studio={root:node,mode:'Reference'};
-  new Function('studio','icon','syncModeAvailability','renderMedia','syncLifecycleActions','HOST_CAPABILITIES','generationButtonMarkup',mainSource.slice(start,end)+';setGenerationState("idle","","");')(studio,noop,noop,noop,noop,{comfyMemory:true},generationButtonMarkup);
+  new Function('studio','icon','syncModeAvailability','renderMedia','syncLifecycleActions','HOST_CAPABILITIES','generationButtonMarkup','t','msg','writeStatusContent',mainSource.slice(start,end)+';setGenerationState("idle","","");')(studio,noop,noop,noop,noop,{comfyMemory:true},generationButtonMarkup,t,msg,writeStatusContent);
 });
 
 test("only confirmed Writer ownership makes unknown router state a release target",async()=>{

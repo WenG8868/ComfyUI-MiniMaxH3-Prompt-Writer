@@ -220,7 +220,10 @@ function countWords(value) {
 }
 
 function promptLengthMeta(value) {
-  return `${value.length.toLocaleString()} characters · ${countWords(value).toLocaleString()} words`;
+  return t("meta.prompt_length", {
+    characters: value.length.toLocaleString(),
+    words: countWords(value).toLocaleString(),
+  });
 }
 
 function formatGenerationMeta(result) {
@@ -246,7 +249,7 @@ function syncOutputLengthMeta() {
   if (!studio) return;
   const output = studio.root.querySelector("[data-output]");
   const meta = studio.root.querySelector(".h3ps-editor-meta span:last-child");
-  const suffix = meta.textContent.replace(/^[\d,.]+ (?:chars|characters)(?: · [\d,.]+ words)?(?: · )?/i, "");
+  const suffix = meta.textContent.split(" · ").slice(2).join(" · ");
   meta.textContent = `${promptLengthMeta(output.value)}${suffix ? ` · ${suffix}` : ""}`;
 }
 
@@ -812,16 +815,12 @@ function showToast(title, message, details = null, action = null, options = {}) 
       studio.toastDismissOnWorkspaceClick = dismissOnWorkspaceClick;
     }
   }, 0);
-  toast.querySelector("[data-toast-title]").textContent = title;
-  toast.querySelector("[data-toast-message]").textContent = message;
+  studio.toastSnapshot = { title, message, details, action };
+  writeToastContent(toast, studio.toastSnapshot);
   const technical = toast.querySelector("[data-toast-details]");
-  technical.hidden = details == null;
   technical.open = false;
-  technical.querySelector("pre").textContent = details == null ? "" : typeof details === "string" ? details : JSON.stringify(details, null, 2);
   toast.classList.toggle("has-details", details != null);
   const actionButton = toast.querySelector("[data-toast-action]");
-  actionButton.hidden = !action;
-  actionButton.textContent = action?.label || "";
   actionButton.onclick = action ? () => { action.onClick(); hideToast(); } : null;
   toast.classList.toggle("has-action", Boolean(action));
   toast.classList.toggle("is-persistent", dismissOnWorkspaceClick);
@@ -1143,6 +1142,7 @@ function hideToast() {
   actionButton.onclick = null;
   actionButton.textContent = "";
   actionButton.hidden = true;
+  studio.toastSnapshot = null;
   toast.classList.remove("is-visible", "is-persistent", "has-action");
 }
 
@@ -1160,7 +1160,6 @@ function thinkingFallbackMessage(result, outputLabel) {
 function setGenerationState(state, label, detail) {
   const button = studio.root.querySelector("[data-generate]");
   const status = studio.root.querySelector("[data-status]");
-  const statusDetail = studio.root.querySelector("[data-status-detail]");
   const busy = state === "busy";
   const wasBusy = studio.requestBusy;
   studio.requestBusy = busy;
@@ -1171,25 +1170,26 @@ function setGenerationState(state, label, detail) {
   const comfyMemory = studio.root.querySelector("[data-comfy-memory-action]");
   comfyMemory.disabled = busy || !HOST_CAPABILITIES.comfyMemory;
   comfyMemory.title = busy
-    ? "Available after the active Writer request finishes"
-    : "Unload models held by ComfyUI without clearing cached workflow results";
+    ? t("generation.free_vram_busy")
+    : t("generation.free_vram_tooltip");
   button.classList.toggle("is-cancel", busy);
-  if (!busy || !wasBusy) button.innerHTML = generationButtonMarkup(icon, busy, studio.mode === "Music3" ? "Generate caption" : "Generate prompt");
+  if (!busy || !wasBusy) button.innerHTML = generationButtonMarkup(icon, busy, msg(studio.mode === "Music3" ? "generation.generate_caption" : "generation.generate_prompt"));
   renderMedia(studio.mode);
   syncLifecycleActions();
   status.hidden = !busy;
   status.classList.toggle("is-busy", busy);
   if (busy) {
-    if (label === "Generating") {
+    const generating = typeof label === "object" ? label?.key === "status.generating" : label === "Generating";
+    if (generating) {
       studio.generationDotCount = ((studio.generationDotCount || 0) % 3) + 1;
-      status.querySelector("strong").textContent = `${label}${".".repeat(studio.generationDotCount)}`;
     } else {
       studio.generationDotCount = 0;
-      status.querySelector("strong").textContent = label;
     }
-    statusDetail.textContent = detail;
+    studio.generationSnapshot = { state, label, detail, dots: studio.generationDotCount };
+    writeStatusContent(status, studio.generationSnapshot);
   } else {
     studio.generationDotCount = 0;
+    studio.generationSnapshot = null;
   }
 }
 
@@ -3870,6 +3870,46 @@ function createStudio() {
   syncSystemPromptEditors();
   setMusicSystemPromptProfile(studio.musicSystemPromptProfile);
   refreshModels();
+  const refreshLocalizedUi = () => {
+    syncTheme();
+    syncFullscreenState();
+    syncInterfaceSize();
+    syncWorkspace();
+    syncModeAvailability();
+    syncSelectedModelSourceLabel();
+    syncActiveModelSummary();
+    syncLifecycleActions();
+    syncProviderSettings();
+    syncRuntimeSummary();
+    syncThinkingAvailability();
+    syncContextAvailability();
+    syncAdvancedRuntimeControls();
+    syncSystemPromptEditors();
+    syncMusicSystemPromptSummary();
+    syncNotifications();
+    syncOutputLengthMeta();
+    updateBriefLayout();
+    updateMusicLyricsCount();
+    const comfyMemory = root.querySelector("[data-comfy-memory-action]");
+    if (comfyMemory) {
+      comfyMemory.title = studio.requestBusy
+        ? t("generation.free_vram_busy")
+        : t("generation.free_vram_tooltip");
+    }
+    renderMedia(studio.mode);
+    if (studio.generationSnapshot) {
+      writeStatusContent(root.querySelector("[data-status]"), {
+        ...studio.generationSnapshot,
+        dots: studio.generationDotCount,
+      });
+    }
+    if (studio.toastSnapshot) writeToastContent(root.querySelector("[data-h3ps-toast]"), studio.toastSnapshot);
+    studio.sequence?.refresh();
+  };
+  onLocaleChange(() => {
+    console.log(`[H3 Writer i18n] ui refreshed locale=${document.documentElement.lang}`);
+    refreshLocalizedUi();
+  });
   return studio;
 }
 
