@@ -1,3 +1,5 @@
+import { t } from "./i18n.js";
+
 const INSTALL_KEY = Symbol.for("minimax.h3.prompt.studio.vramHandoff");
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -5,7 +7,7 @@ export const AUTO_VRAM_TOOLTIP = "Automatically frees ComfyUI VRAM before Prompt
 
 export function autoVramControlMarkup(supported) {
   if (!supported) return "";
-  return `<label class="h3ps-toggle-control" data-vram-handoff-control title="${AUTO_VRAM_TOOLTIP}" hidden><input type="checkbox" data-vram-handoff><span></span>Auto VRAM</label>`;
+  return `<label class="h3ps-toggle-control" data-vram-handoff-control title="${t("vram.auto_tooltip")}" data-i18n-title="vram.auto_tooltip" hidden><input type="checkbox" data-vram-handoff><span></span><span data-i18n="vram.auto_label">Auto VRAM</span></label>`;
 }
 
 export function isLocalOllamaHost(value) {

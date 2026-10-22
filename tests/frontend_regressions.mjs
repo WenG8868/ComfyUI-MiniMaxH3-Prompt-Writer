@@ -4,6 +4,8 @@ import "./draft_files.mjs";
 import "./desktop_notifications.mjs";
 import { generationButtonMarkup } from "../web/writer_controls.js";
 import { aspectRatioMarkup, splitMenuMarkup } from "../web/writer_controls.js";
+import { settingsMarkup, generateModelSummaryMarkup } from "../web/settings.js";
+import { AUTO_VRAM_TOOLTIP, autoVramControlMarkup } from "../web/vram_handoff.js";
 import './media_visual.mjs';
 import './sequence.mjs';
 import "./writer_async.mjs";
@@ -24,18 +26,14 @@ const { availableReferenceTags, comfyVramIsAlreadyEmpty, createSessionId, fileCo
 const responseSource = await readFile(new URL("../web/api/response.js", import.meta.url), "utf8");
 const responseEncoded = Buffer.from(responseSource).toString("base64");
 const { readApiResponse } = await import(`data:text/javascript;base64,${responseEncoded}`);
-const vramHandoffSource = await readFile(new URL("../web/vram_handoff.js", import.meta.url), "utf8");
-const vramHandoffEncoded = Buffer.from(vramHandoffSource).toString("base64");
 const {
-  AUTO_VRAM_TOOLTIP,
-  autoVramControlMarkup,
   createVramHandoffCoordinator,
   installVramHandoff,
   isLocalOllamaHost,
   releaseComfyVramWhenIdle,
   unloadWriterModels,
   writerResidencyTargets,
-} = await import(`data:text/javascript;base64,${vramHandoffEncoded}`);
+} = await import("../web/vram_handoff.js");
 const stateSource = await readFile(new URL("../web/studio_state.js", import.meta.url), "utf8");
 const stateEncoded = Buffer.from(stateSource).toString("base64");
 const {
@@ -79,9 +77,6 @@ const {
   isPersistedDraftMode,
   resetModeDraft,
 } = await import(`data:text/javascript;base64,${stateEncoded}`);
-const settingsSource = await readFile(new URL("../web/settings.js", import.meta.url), "utf8");
-const settingsEncoded = Buffer.from(settingsSource).toString("base64");
-const { settingsMarkup } = await import(`data:text/javascript;base64,${settingsEncoded}`);
 const mainSource = await readFile(new URL("../web/main.js", import.meta.url), "utf8");
 const composerSource = await readFile(new URL("../web/media_composer.js", import.meta.url), "utf8");
 const styleModules = [
@@ -385,7 +380,8 @@ test("Queue invalidates Writer attempts synchronously and tracked requests remai
 test("Auto VRAM markup is absent outside ComfyUI and carries the approved tooltip", () => {
   assert.equal(autoVramControlMarkup(false), "");
   const markup = autoVramControlMarkup(true);
-  assert.match(markup, />Auto VRAM<\/label>/);
+  assert.match(markup, /data-i18n="vram\.auto_label">Auto VRAM<\/span>/);
+  assert.match(markup, /data-i18n-title="vram\.auto_tooltip"/);
   assert.match(markup, new RegExp(AUTO_VRAM_TOOLTIP.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
@@ -1248,7 +1244,7 @@ test("Settings separates providers, installed models, diagnostics, and verified 
   assert.match(markup, /API providers/);
   assert.match(markup, /data-installed-model/);
   assert.match(markup, /Installed models/);
-  assert.match(markup, /h3ps-installed-model-heading">Select Model/);
+  assert.match(markup, /h3ps-installed-model-heading" data-i18n="settings\.select_model">Select Model/);
   assert.doesNotMatch(markup, /Model used for Direct GGUF/);
   assert.match(markup, /data-model-refresh/);
   assert.match(markup, /data-model-scan-slot/);
@@ -1338,8 +1334,10 @@ test("Settings shows compact global System Prompt summaries and an on-demand edi
   assert.match(mainSource, /data-thinking/);
   assert.match(mainSource, /data-keep-loaded/);
   assert.match(mainSource, /autoVramControlMarkup\(VRAM_HANDOFF_SUPPORTED\)/);
-  assert.match(vramHandoffSource, />Auto VRAM<\/label>/);
-  assert.match(vramHandoffSource, /data-vram-handoff-control/);
+  const vramMarkup = autoVramControlMarkup(true);
+  assert.match(vramMarkup, /data-i18n="vram\.auto_label">Auto VRAM<\/span>/);
+  assert.match(vramMarkup, /data-vram-handoff-control/);
+  assert.match(vramMarkup, /data-i18n-title="vram\.auto_tooltip"/);
   assert.match(mainSource, /isLocalOllamaHost\(studio\.ollamaHost\)/);
   assert.match(mainSource, /VRAM_HANDOFF_SUPPORTED = typeof app\?\.queuePrompt === "function"/);
   assert.match(mainSource, /installVramHandoff\(app/);
@@ -1359,20 +1357,23 @@ test("Settings shows compact global System Prompt summaries and an on-demand edi
   assert.doesNotMatch(mainSource, /Stop request/);
   assert.match(mainSource, /Checking…/);
   assert.match(mainSource, /Ollama is not running/);
-  assert.match(settingsSource, /title="Open model settings"/);
-  assert.match(settingsSource, /data-active-runtime-summary>Runtime · Auto</);
-  assert.match(settingsSource, /data-runtime-option="context" data-value="large">32K</);
-  assert.match(settingsSource, /data-runtime-option="context" data-value="maximum">48K</);
-  assert.match(settingsSource, /data-runtime-option="context" data-value="custom">Custom</);
-  assert.match(settingsSource, /Generation budget/);
-  assert.match(settingsSource, /data-direct-runtime-advanced[\s\S]*KV cache[\s\S]*Generation budget/);
-  assert.match(settingsSource, /data-reasoning-effort-control hidden/);
-  assert.match(settingsSource, /data-direct-advanced-summary>Auto</);
-  assert.match(settingsSource, /data-value="2048">2K</);
-  assert.match(settingsSource, /data-value="4096">4K</);
-  assert.match(settingsSource, /data-value="8192">8K</);
-  assert.doesNotMatch(settingsSource, /data-runtime-summary/);
-  assert.doesNotMatch(settingsSource, />Custom (Context|Generation budget)</);
+  const summaryMarkup = generateModelSummaryMarkup(() => "");
+  assert.match(summaryMarkup, /data-i18n-title="settings\.open_model"/);
+  assert.match(summaryMarkup, /data-i18n="models\.prompt_model"/);
+  assert.match(summaryMarkup, /data-i18n="models\.runtime_summary">Runtime · Auto</);
+  assert.match(summaryMarkup, /data-active-runtime-summary/);
+  assert.match(markup, /data-runtime-option="context" data-value="large">32K</);
+  assert.match(markup, /data-runtime-option="context" data-value="maximum">48K</);
+  assert.match(markup, /data-runtime-option="context" data-value="custom" data-i18n="settings\.custom">Custom</);
+  assert.match(markup, /data-i18n="settings\.generation_budget">Generation budget</);
+  assert.match(markup, /data-direct-runtime-advanced[\s\S]*data-i18n="settings\.kv_cache">KV cache[\s\S]*data-i18n="settings\.generation_budget">Generation budget/);
+  assert.match(markup, /data-reasoning-effort-control hidden/);
+  assert.match(markup, /data-direct-advanced-summary data-i18n="settings\.auto">Auto</);
+  assert.match(markup, /data-value="2048">2K</);
+  assert.match(markup, /data-value="4096">4K</);
+  assert.match(markup, /data-value="8192">8K</);
+  assert.doesNotMatch(markup, /data-runtime-summary/);
+  assert.doesNotMatch(markup, />Custom (Context|Generation budget)</);
   assert.match(mainSource, /reasoning_effort_values/);
   assert.match(mainSource, /reasoningControl\.hidden = values\.length === 0/);
   assert.match(mainSource, /Number\(studio\.reasoningEffort !== "auto" && values\.includes\(studio\.reasoningEffort\)\)/);
@@ -1642,8 +1643,9 @@ test("workbench exposes responsive stacking and layered keyboard navigation", ()
 });
 
 test("runtime pickers and the verified-model dialog keep keyboard state in sync", () => {
-  assert.match(settingsSource, /aria-haspopup="true" aria-expanded="false" data-runtime-toggle="context"/);
-  assert.match(settingsSource, /aria-haspopup="true" aria-expanded="false" data-runtime-toggle="reasoning"/);
+  const markup = settingsMarkup(() => "");
+  assert.match(markup, /aria-haspopup="true" aria-expanded="false" data-runtime-toggle="context"/);
+  assert.match(markup, /aria-haspopup="true" aria-expanded="false" data-runtime-toggle="reasoning"/);
   assert.match(mainSource, /function setRuntimeMenuOpen\(name, open, restoreFocus = false\)/);
   assert.match(mainSource, /else if \(runtimeMenu\) setRuntimeMenuOpen\(runtimeMenu\.dataset\.runtimeMenu, false, true\)/);
   assert.match(mainSource, /data-other-models-backdrop[^>]*hidden/);
