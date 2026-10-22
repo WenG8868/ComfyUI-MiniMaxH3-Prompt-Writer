@@ -1,4 +1,5 @@
 import re
+import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,21 +34,19 @@ def backend_codes():
     return codes
 
 
-def test_dictionaries_have_identical_keys():
-    assert keys(EN_SOURCE) == keys(ZH_SOURCE)
+class I18nKeysTest(unittest.TestCase):
+    def test_dictionaries_have_identical_keys(self):
+        self.assertEqual(keys(EN_SOURCE), keys(ZH_SOURCE))
 
+    def test_no_empty_translation_values(self):
+        for source in (EN_SOURCE, ZH_SOURCE):
+            for match in KEY_RE.finditer(source):
+                self.assertTrue(match.group(2).strip('"`').strip(), match.group(1))
 
-def test_no_empty_translation_values():
-    for source in (EN_SOURCE, ZH_SOURCE):
-        for match in KEY_RE.finditer(source):
-            assert match.group(2).strip('"`').strip(), match.group(1)
+    def test_every_static_backend_error_code_is_translated(self):
+        missing = {f"errors.{code}" for code in backend_codes()} - keys(ZH_SOURCE)
+        self.assertFalse(missing, sorted(missing))
 
-
-def test_every_static_backend_error_code_is_translated():
-    missing = {f"errors.{code}" for code in backend_codes()} - keys(ZH_SOURCE)
-    assert not missing, sorted(missing)
-
-
-def test_frontend_and_vram_codes_are_translated():
-    missing = {f"errors.{code}" for code in FRONTEND_CODES} - keys(ZH_SOURCE)
-    assert not missing, sorted(missing)
+    def test_frontend_and_vram_codes_are_translated(self):
+        missing = {f"errors.{code}" for code in FRONTEND_CODES} - keys(ZH_SOURCE)
+        self.assertFalse(missing, sorted(missing))
