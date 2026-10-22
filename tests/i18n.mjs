@@ -185,10 +185,16 @@ test("legacy users keep auto behavior without writing language until they switch
 
 test("network failures map to stable error codes", async () => {
   const timeout = Object.assign(new Error("aborted"), { name: "TimeoutError" });
-  assert.equal(networkError(timeout).code, "REQUEST_TIMEOUT");
+  const timeoutError = networkError(timeout);
+  assert.equal(timeoutError.code, "REQUEST_TIMEOUT");
+  assert.equal(timeoutError.message, "aborted");
+  assert.equal(timeoutError.cause, timeout);
   assert.equal(networkError(new Error("offline")).code, "NETWORK_ERROR");
   const failed = { ok: false, status: 502, text: async () => "<html>bad gateway</html>" };
   await assert.rejects(readApiResponse(failed), (error) => error.code === "REQUEST_FAILED");
   const invalid = { ok: true, status: 200, text: async () => "not json" };
   await assert.rejects(readApiResponse(invalid), (error) => error.code === "INVALID_RESPONSE");
+  const brokenBody = { ok: true, status: 200, text: async () => { throw new Error("body reset"); } };
+  await assert.rejects(readApiResponse(brokenBody), (error) =>
+    error.code === "NETWORK_ERROR" && error.cause?.message === "body reset");
 });

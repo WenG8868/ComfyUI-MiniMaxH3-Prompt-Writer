@@ -14,7 +14,12 @@ export function networkError(error) {
 }
 
 export async function readApiResponse(response) {
-  const text = await response.text();
+  let text;
+  try {
+    text = await response.text();
+  } catch (error) {
+    throw networkError(error);
+  }
   let payload = null;
   if (text.trim()) {
     try {

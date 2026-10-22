@@ -44,7 +44,9 @@ class I18nKeysTest(unittest.TestCase):
                 self.assertTrue(match.group(2).strip('"`').strip(), match.group(1))
 
     def test_every_static_backend_error_code_is_translated(self):
-        missing = {f"errors.{code}" for code in backend_codes()} - keys(ZH_SOURCE)
+        codes = backend_codes()
+        self.assertTrue(codes, "backend error-code scan matched nothing; the regex or backend layout changed")
+        missing = {f"errors.{code}" for code in codes} - keys(ZH_SOURCE)
         self.assertFalse(missing, sorted(missing))
 
     def test_frontend_and_vram_codes_are_translated(self):
