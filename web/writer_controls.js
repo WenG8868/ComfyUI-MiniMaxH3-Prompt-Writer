@@ -67,8 +67,11 @@ export function copyButtonMarkup(icon, attributes, label = "", iconOnly = false)
 }
 
 // Option labels and actions are trusted constants supplied by Writer views.
-export function formatChoiceMarkup(label, options, selected) {
-  return `<div class="h3ps-sequence-copy-choice" role="group" aria-label="${label}">${options.map(([action,text])=>`<button type="button" data-seq-action="${action}" aria-pressed="${action===selected}">${text}</button>`).join("")}</div>`;
+export function formatChoiceMarkup(label, options, selected, labelKey = "") {
+  const aria = labelKey
+    ? `aria-label="${t(labelKey)}" data-i18n-aria-label="${labelKey}"`
+    : `aria-label="${label}"`;
+  return `<div class="h3ps-sequence-copy-choice" role="group" ${aria}>${options.map(([action,text])=>`<button type="button" data-seq-action="${action}" aria-pressed="${action===selected}">${text}</button>`).join("")}</div>`;
 }
 
 export function fitTextarea(editor, minimumHeight, borderHeight = 0) {

@@ -6,6 +6,7 @@ import vm from "node:vm";
 import { DEFAULT_SEQUENCE_INSTRUCTIONS, LEGACY_SEQUENCE_INSTRUCTIONS, newSequence, addChunk, deleteChunk, timeline, effectiveMedia, aggregate, saveSequence, loadSequence, duration, replacePrompt, revisePrompt, assignReference, removeReference, reconcileMedia, sequenceInputs } from "../web/sequence_state.js";
 import { createSequenceController } from "../web/sequence_controller.js";
 import { createSequenceWorkspace, displaySeparator, parseSeparator } from "../web/sequence_workspace.js";
+import { configureI18n, setLanguagePreference } from "../web/i18n.js";
 import { writeToastContent } from "../web/toast.js";
 import { t } from "../web/i18n.js";
 
@@ -588,4 +589,50 @@ test("long Sequence brief has an informational count and survives storage",async
   assert.equal(root.querySelector('[data-seq-brief-count]').textContent,`${brief.length.toLocaleString()} characters`);
   assert.equal(loadSequence(window.localStorage).brief,brief);
   await window.happyDOM.close();
+});
+
+test("sequence workspace and controller follow locale switches without rebuilding editors", async () => {
+  const { window, root, workspace, errors } = await sequenceFixture();
+  const state = workspace.state;
+  addChunk(state);
+  state.chunks[0].prompt = "kept";
+  state.chunks[0].instruction = "direction";
+  workspace.refresh();
+  const editor = root.querySelectorAll("[data-seq-prompt]")[0];
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  try {
+    setLanguagePreference("zh-CN");
+    workspace.refresh();
+    assert.equal(root.querySelector("[data-seq-selector]").textContent, "序列");
+    assert.equal(root.querySelector('[data-seq-action="add"]').textContent.trim(), "添加片段");
+    assert.equal(root.querySelector("[data-seq-brief]").placeholder, "大约 15 秒时她站起身…");
+    assert.equal(root.querySelectorAll('[data-seq-action="generate"]')[0].textContent, "重新生成");
+    assert.equal(root.querySelector('[data-seq-action="refine-open"]').textContent, "改写");
+    assert.equal(root.querySelector("[data-seq-copy-format]").getAttribute("aria-label"), "复制格式");
+    assert.equal(root.querySelectorAll("[data-seq-prompt]")[0], editor);
+    assert.equal(editor.value, "kept");
+    workspace.controller.progress.set(state.chunks[0].id, "repairing");
+    workspace.refresh();
+    assert.equal(root.querySelectorAll("[data-seq-status]")[0].textContent, "正在修复…");
+    workspace.insert("a");
+    assert.match(errors.at(-1), /请先将光标放入片段字段或创意描述/);
+
+    const pending = deferred();
+    const controller = createSequenceController({
+      state: newSequence(), snapshot: () => ({}), prepare: () => pending.promise, run: () => {}, cancel: () => {},
+    });
+    const operation = controller.start();
+    await Promise.resolve();
+    assert.equal(controller.phase, "准备中…");
+    pending.resolve(false);
+    await operation;
+
+    setLanguagePreference("en");
+    workspace.refresh();
+    assert.equal(root.querySelector("[data-seq-selector]").textContent, "Sequence");
+    assert.equal(root.querySelector("[data-seq-brief]").placeholder, "At around 15 seconds she stands up…");
+  } finally {
+    setLanguagePreference("en");
+    await window.happyDOM.close();
+  }
 });
