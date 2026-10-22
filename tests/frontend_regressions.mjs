@@ -1909,6 +1909,100 @@ test("duration label stays localized after a locale refresh", () => {
   assert.equal(mainSource.match(/syncDurationLabel\(\);/g)?.length, 3);
 });
 
+test("draft-default confirm label keeps its i18n key while armed", () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  const label = window.document.createElement("span");
+  label.dataset.restoreDefaultDraftsLabel = "";
+  label.dataset.i18n = "settings.restore_drafts";
+  label.textContent = "Restore default drafts";
+  root.append(label);
+  const timers = [];
+  const studio = { root, draftDefaultsArmed: false, draftDefaultsTimer: null };
+  const start = mainSource.indexOf("function disarmDraftDefaults(");
+  const end = mainSource.indexOf("function hideToast(", start);
+  assert.ok(start >= 0 && end > start, "draft default controls must be top-level functions");
+  const draftControls = new Function(
+    "studio", "t", "msg", "showToast", "saveModeDrafts", "restoreModeDraft", "localStorage", "setTimeout", "clearTimeout",
+    `${mainSource.slice(start, end)};return { disarmDraftDefaults, restoreDefaultDrafts };`,
+  )(
+    studio, t, msg, () => {}, () => {}, () => {}, null,
+    (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
+    () => {},
+  );
+
+  configureI18n({ preference: "en", root });
+  draftControls.restoreDefaultDrafts({ stopPropagation() {} });
+  assert.equal(studio.draftDefaultsArmed, true);
+  assert.equal(label.dataset.i18n, "toast.drafts.confirm_label");
+  assert.equal(label.textContent, "Click again to confirm");
+  assert.deepEqual(timers.map(timer => timer.delay), [5000]);
+
+  configureI18n({ preference: "zh-CN", root });
+  assert.equal(label.dataset.i18n, "toast.drafts.confirm_label");
+  assert.equal(label.textContent, "再次点击确认");
+
+  draftControls.disarmDraftDefaults();
+  assert.equal(studio.draftDefaultsArmed, false);
+  assert.equal(label.dataset.i18n, "toast.drafts.restore_label");
+  assert.equal(label.textContent, "恢复默认草稿");
+  configureI18n({ preference: "en", root });
+});
+
+test("lyrics restore label keeps its i18n key aligned with its action", async () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  root.innerHTML = `
+    <section data-lyrics-refine-panel>
+      <textarea data-lyrics-refine-instruction>rewrite</textarea>
+      <input type="checkbox" data-lyrics-use-brief checked>
+      <button type="button" data-lyrics-refine-submit><span data-i18n="workspace.refine">Refine</span></button>
+      <button type="button" data-lyrics-refine-restore hidden data-i18n="workspace.restore_previous">Restore previous</button>
+    </section>
+    <textarea data-music-lyrics></textarea>
+    <textarea data-music-brief>brief</textarea>`;
+  const studio = {
+    mode: "Music3",
+    selectedModel: { name: "model", runtime_ready: true },
+    root,
+    lyricsRequestBusy: false,
+    desktopNotifications: { notify() {} },
+  };
+  const start = mainSource.indexOf("async function submitLyricsRefinement(");
+  const end = mainSource.indexOf("\nasync function submitRefinement(", start);
+  assert.ok(start >= 0 && end > start, "submitLyricsRefinement must be a top-level function");
+  const submitLyricsRefinement = new Function(
+    "studio", "prepareWriterRequest", "generationModeIsAvailable", "markActiveWriterRequest", "clearActiveWriterRequest",
+    "setGenerationState", "vramHandoffCoordinator", "refine", "buildLyricsRefinePayload", "newGenerationSeed",
+    "renderPromptHighlights", "formatGenerationMeta", "syncRuntimeSummary", "syncModifiedState", "saveCurrentModeDraft",
+    "showToast", "updateMusicLyricsCount", "icon", "getStatus", "updatePromptResidency", "msg", "t", "messageText", "showErrorToast",
+    `${mainSource.slice(start, end)};return submitLyricsRefinement;`,
+  )(
+    studio, async () => true, () => true, () => {}, () => {}, () => {},
+    { trackWriterRequest: (promise) => promise },
+    async () => ({ prompt: "generated lyrics", total_seconds: 1, tokens_per_second: 2 }),
+    () => ({}), () => 1, () => {}, () => "", () => {}, () => {}, () => {}, () => {}, () => {},
+    () => "", async () => ({}), () => {}, msg, t, messageText, () => {},
+  );
+  const panel = root.querySelector("[data-lyrics-refine-panel]");
+  const submit = panel.querySelector("[data-lyrics-refine-submit]");
+  const restore = panel.querySelector("[data-lyrics-refine-restore]");
+
+  configureI18n({ preference: "en", root });
+  await submitLyricsRefinement();
+  assert.equal(restore.dataset.i18n, "toast.lyrics.remove_generated");
+  assert.equal(restore.textContent, "Remove generated");
+  assert.equal(restore.hidden, false);
+
+  configureI18n({ preference: "zh-CN", root });
+  assert.equal(restore.textContent, "移除生成内容");
+  assert.notEqual(restore.textContent, "恢复上一版");
+  const refineSpan = submit.querySelector('[data-i18n="workspace.refine"]');
+  assert.ok(refineSpan, "finally must restore the localized Refine span");
+  assert.equal(refineSpan.textContent, "优化");
+  configureI18n({ preference: "en", root });
+});
+
 test("error toasts keep a localized summary and the original English detail", () => {
   const window = new Window();
   const root = window.document.createElement("div");

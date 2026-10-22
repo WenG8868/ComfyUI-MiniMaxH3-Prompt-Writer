@@ -1124,14 +1124,19 @@ function disarmDraftDefaults() {
   clearTimeout(studio.draftDefaultsTimer);
   studio.draftDefaultsArmed = false;
   const label = studio.root.querySelector("[data-restore-default-drafts-label]");
-  if (label) label.textContent = t("toast.drafts.restore_label");
+  if (label) {
+    label.dataset.i18n = "toast.drafts.restore_label";
+    label.textContent = t("toast.drafts.restore_label");
+  }
 }
 
 function restoreDefaultDrafts(event) {
   event.stopPropagation();
   if (!studio.draftDefaultsArmed) {
     studio.draftDefaultsArmed = true;
-    studio.root.querySelector("[data-restore-default-drafts-label]").textContent = t("toast.drafts.confirm_label");
+    const label = studio.root.querySelector("[data-restore-default-drafts-label]");
+    label.dataset.i18n = "toast.drafts.confirm_label";
+    label.textContent = t("toast.drafts.confirm_label");
     clearTimeout(studio.draftDefaultsTimer);
     studio.draftDefaultsTimer = setTimeout(disarmDraftDefaults, 5000);
     return;
@@ -2968,6 +2973,7 @@ async function submitLyricsRefinement() {
     studio.lyricsRestore = { lyrics: currentLyrics };
     lyrics.value = result.prompt;
     const restore = panel.querySelector("[data-lyrics-refine-restore]");
+    restore.dataset.i18n = currentLyrics.trim() ? "workspace.restore_previous" : "toast.lyrics.remove_generated";
     restore.textContent = currentLyrics.trim() ? t("toast.lyrics.restore_previous") : t("toast.lyrics.remove_generated");
     restore.hidden = false;
     updateMusicLyricsCount();
@@ -2985,7 +2991,7 @@ async function submitLyricsRefinement() {
   } finally {
     studio.lyricsRequestBusy = false;
     submit.disabled = false;
-    submit.innerHTML = `${icon("spark", 13)} Refine`;
+    submit.innerHTML = `${icon("spark", 13)} <span data-i18n="workspace.refine">${t("workspace.refine")}</span>`;
     try {
       const status = await getStatus(studio.ollamaHost);
       updatePromptResidency(status);
@@ -3079,7 +3085,7 @@ async function submitRefinement() {
     else showErrorToast("toast.refine.failed.title", error);
   } finally {
     submit.disabled = false;
-    submit.innerHTML = `${icon("spark", 13)} Refine`;
+    submit.innerHTML = `${icon("spark", 13)} <span data-i18n="workspace.refine">${t("workspace.refine")}</span>`;
     try {
       const status = await getStatus(studio.ollamaHost);
       updatePromptResidency(status);

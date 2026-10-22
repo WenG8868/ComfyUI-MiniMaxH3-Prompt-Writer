@@ -93,7 +93,7 @@ function refinementController(lyricsMode, pending) {
     syncModifiedState() {}, saveCurrentModeDraft() {}, showToast() {}, updateMusicLyricsCount() {},
     icon: () => "", getStatus: async () => ({}), updatePromptResidency() {}, msg, t, messageText, showErrorToast() {},
   });
-  return { api, output, instruction, started: started.promise };
+  return { api, output, instruction, submit, started: started.promise };
 }
 
 for (const lyrics of [false, true]) {
@@ -110,6 +110,18 @@ for (const lyrics of [false, true]) {
     assert.equal(instruction.value, "new instruction");
   });
 }
+
+test("Refine finally restores a localized button span", async () => {
+  for (const lyrics of [false, true]) {
+    const pending = deferred();
+    const { api, submit, started } = refinementController(lyrics, pending);
+    const operation = lyrics ? api.submitLyricsRefinement() : api.submitRefinement();
+    await started;
+    pending.resolve({ prompt: "rewritten", total_seconds: 1, tokens_per_second: 1 });
+    await operation;
+    assert.match(submit.innerHTML, /<span data-i18n="workspace\.refine">/);
+  }
+});
 
 test("Refine applies an owned result without clearing a newer instruction", async () => {
   const pending = deferred();
