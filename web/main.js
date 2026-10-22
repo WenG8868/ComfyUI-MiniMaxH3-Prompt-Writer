@@ -1104,7 +1104,7 @@ function syncModeAvailability() {
     control.disabled = studio.requestBusy || unavailable;
     control.setAttribute("aria-disabled", String(control.disabled));
     control.title = unavailable && textOnlyDirect
-      ? "This Direct GGUF is text-only. Add its matching mmproj to enable visual modes."
+      ? t("workspace.text_only_mode_title")
       : "";
   });
   studio.root.querySelectorAll("[data-workspace]").forEach((control) => {
@@ -2612,6 +2612,12 @@ function syncOllamaAutoDetection() {
   studio.ollamaPollTimer = setTimeout(() => refreshOllama({ automatic: true }), 4000);
 }
 
+function externalConnectedContextTokens(model) {
+  return model?.context_verified !== false && Number.isFinite(model?.server_context_tokens)
+    ? Math.round(model.server_context_tokens / 1024)
+    : null;
+}
+
 async function connectExternalServer(form) {
   studio.modelSelectionRevision = (studio.modelSelectionRevision || 0) + 1;
   const attempt = (studio.externalConnectionAttempt || 0) + 1;
@@ -2636,12 +2642,13 @@ async function connectExternalServer(form) {
     saveExternalServerConfig(localStorage, saved);
     studio.models = [...studio.models.filter((model) => model.family !== "external"), result.model];
     selectModel(result.model);
+    const connectedContextTokens = externalConnectedContextTokens(result.model);
     showToast(
       msg("toast.external.connected.title"),
-      result.model.context_verified !== false
+      connectedContextTokens !== null
         ? msg("toast.external.connected.message_context", {
             model: result.model.name,
-            tokens: Math.round(result.model.server_context_tokens / 1024),
+            tokens: connectedContextTokens,
           })
         : msg("toast.external.connected.message", { model: result.model.name }),
     );
@@ -3987,7 +3994,7 @@ function createStudio() {
     root.querySelector("[data-refine-restore]").hidden = true;
     syncModifiedState();
     saveCurrentModeDraft();
-    showToast("Previous prompt restored", "The AI rewrite was discarded.");
+    showToast(msg("toast.refine.restored.title"), msg("toast.refine.restored.message"));
   });
   root.querySelector("[data-undo-edits]").addEventListener("click", () => {
     if (typeof studio.lastModelPrompt !== "string") return;
@@ -3997,7 +4004,7 @@ function createStudio() {
     renderPromptHighlights();
     syncModifiedState();
     saveCurrentModeDraft();
-    showToast("Edits undone", "Restored the latest AI-generated prompt.");
+    showToast(msg("toast.edits.undone.title"), msg("toast.edits.undone.message"));
   });
   root.querySelector("[data-copy]").addEventListener("click", () => copyPromptText(root.querySelector("[data-output]").value, studio.mode === "Music3"));
   root.querySelector("[data-output]").addEventListener("input", () => {
@@ -4150,10 +4157,10 @@ async function openFloatingMedia() {
       await current.floatingMediaPending;
     }
     if (request !== mediaPanelRequest) return;
-    if (!hasMedia()) { openStudio(); showToast("Add media first", ""); return; }
+    if (!hasMedia()) { openStudio(); showToast(msg("media.add_first"), ""); return; }
     if (closeStudio() === false) return;
     current.floatingMedia.open();
-  } catch (error) { showToast("Media panel unavailable", error.message); }
+  } catch (error) { showToast(msg("toast.media_panel.unavailable.title"), error.message); }
 }
 
 function focusAvailableControl(element) {

@@ -1043,6 +1043,19 @@ test("External llama.cpp keeps reasoning under server control", () => {
   assert.match(stateSource, /state\.selectedModel\?\.family === "external" \? false : state\.thinking/);
 });
 
+test("external connection toast falls back when context tokens are absent or non-numeric", () => {
+  const helper = mainSource.match(/^function externalConnectedContextTokens\(model\) \{[\s\S]*?^}/m)?.[0];
+  assert.ok(helper, "external context guard helper is present");
+  const context = vm.createContext({});
+  vm.runInContext(helper, context);
+  assert.equal(context.externalConnectedContextTokens({ context_verified: true, server_context_tokens: 16384 }), 16);
+  assert.equal(context.externalConnectedContextTokens({ context_verified: true, server_context_tokens: "16384" }), null);
+  assert.equal(context.externalConnectedContextTokens({ context_verified: true }), null);
+  assert.equal(context.externalConnectedContextTokens({ context_verified: false, server_context_tokens: 16384 }), null);
+  assert.match(mainSource, /connectedContextTokens !== null[\s\S]{0,250}toast\.external\.connected\.message_context/);
+  assert.match(mainSource, /: msg\("toast\.external\.connected\.message", \{ model: result\.model\.name \}\)/);
+});
+
 test("External llama.cpp offers capability-driven two-way Auto VRAM", () => {
   assert.match(mainSource, /\["gguf", "external"\]\.includes\(model\?\.family\)/);
   assert.match(AUTO_VRAM_TOOLTIP, /lifecycle-capable External llama\.cpp routers/);

@@ -202,8 +202,9 @@ function providerController(overrides = {}, dependencies = {}) {
     ...overrides,
   };
   return controller([
-    "connectConfiguredApiProvider", "disconnectConfiguredApiProvider", "chooseApiProviderPreset",
-    "refreshApiProviderModels", "connectExternalServer", "disconnectExternalServer", "refreshModels",
+    "externalConnectedContextTokens", "connectConfiguredApiProvider", "disconnectConfiguredApiProvider",
+    "chooseApiProviderPreset", "refreshApiProviderModels", "connectExternalServer",
+    "disconnectExternalServer", "refreshModels",
   ], {
     studio, localStorage: {}, t, msg, showToast() {}, showErrorToast() {},
     DEFAULT_OLLAMA_HOST: "http://127.0.0.1:11434",
@@ -357,6 +358,29 @@ test("discovery probe cannot restore the model selected before a newer selection
   pending.resolve({ model: { id: "external" } });
   await operation;
   assert.equal(api.studio.selectedModel.id, "new");
+});
+
+test("external connect toast omits the context suffix when tokens are missing or non-numeric", async () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  window.document.body.append(root);
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  const connect = async (model) => {
+    const toasts = [];
+    const api = providerController({}, { showToast: (title, message) => toasts.push({ title, message }) });
+    api.probeExternalServer = async () => ({ model });
+    await api.connectExternalServer(providerForm());
+    return messageText(toasts.pop().message);
+  };
+  try {
+    const base = { id: "external:llama", name: "llama", endpoint: "http://127.0.0.1:8080", remote_model: "llama", context_verified: true };
+    for (const server_context_tokens of [undefined, null, "16384", NaN, Infinity]) {
+      assert.equal(await connect({ ...base, ...(server_context_tokens === undefined ? {} : { server_context_tokens }) }), "llama");
+    }
+    assert.equal(await connect({ ...base, server_context_tokens: 16384 }), "llama · 16K context");
+  } finally {
+    configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  }
 });
 
 test("provider connect toast bodies replay after a locale switch", async () => {

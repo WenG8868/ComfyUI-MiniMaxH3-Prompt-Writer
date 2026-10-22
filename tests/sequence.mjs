@@ -592,7 +592,7 @@ test("long Sequence brief has an informational count and survives storage",async
 });
 
 test("sequence workspace and controller follow locale switches without rebuilding editors", async () => {
-  const { window, root, workspace, errors } = await sequenceFixture();
+  const { window, root, workspace, errors, requests } = await sequenceFixture();
   const state = workspace.state;
   addChunk(state);
   state.chunks[0].prompt = "kept";
@@ -611,6 +611,11 @@ test("sequence workspace and controller follow locale switches without rebuildin
     assert.equal(root.querySelector("[data-seq-copy-format]").getAttribute("aria-label"), "复制格式");
     assert.equal(root.querySelectorAll("[data-seq-prompt]")[0], editor);
     assert.equal(editor.value, "kept");
+    const newlineHint = root.querySelector('[data-i18n="sequence.copy.newline_hint"]');
+    assert.match(newlineHint.textContent, /\\n/);
+    assert.equal(newlineHint.textContent.includes("\n"), false);
+    const mediaHint = root.querySelector('[data-i18n-title="sequence.media_hint"]');
+    assert.match(mediaHint.getAttribute("title"), /<Picture N>/);
     workspace.controller.progress.set(state.chunks[0].id, "repairing");
     workspace.refresh();
     assert.equal(root.querySelectorAll("[data-seq-status]")[0].textContent, "正在修复…");
@@ -631,6 +636,7 @@ test("sequence workspace and controller follow locale switches without rebuildin
     workspace.refresh();
     assert.equal(root.querySelector("[data-seq-selector]").textContent, "Sequence");
     assert.equal(root.querySelector("[data-seq-brief]").placeholder, "At around 15 seconds she stands up…");
+    assert.equal(requests.length, 0);
   } finally {
     setLanguagePreference("en");
     await window.happyDOM.close();
