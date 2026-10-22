@@ -221,6 +221,8 @@ test("shared Aspect and split controls keep independent values and keyboard-faci
   bindAspectRatio(single,"16:9",v=>values.push(["single",v]));bindAspectRatio(sequence,"9:16",v=>values.push(["sequence",v]));
   sequence.querySelector("[data-choice-toggle]").click();assert.equal(sequence.querySelector("[data-choice-menu]").hidden,false);
   sequence.querySelector('[data-aspect="1:1"]').click();assert.equal(single.querySelector("[data-aspect-label]").textContent,"16:9");
+  assert.equal(sequence.querySelector("[data-aspect-description]").dataset.i18n,"aspect.square");
+  assert.equal(single.querySelector("[data-aspect-description]").dataset.i18n,"aspect.widescreen");
   assert.equal(sequence.querySelector("[data-choice-toggle]").getAttribute("aria-expanded"),"false");assert.deepEqual(values,[["sequence","1:1"]]);
   const split=root.querySelector(".h3ps-clear-control");setSplitMenuOpen(split,true);
   assert.equal(split.querySelector("[data-menu]").hidden,false);assert.ok([...split.querySelectorAll("button")].every(b=>b.getAttribute("aria-expanded")==="true"));

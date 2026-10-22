@@ -1245,6 +1245,9 @@ test("Settings separates providers, installed models, diagnostics, and verified 
   assert.match(markup, /data-installed-model/);
   assert.match(markup, /Installed models/);
   assert.match(markup, /h3ps-installed-model-heading" data-i18n="settings\.select_model">Select Model/);
+  assert.match(markup, /data-i18n-placeholder="settings\.enter_tokens"/);
+  assert.match(markup, /data-i18n-aria-label="settings\.provider_aria"/);
+  assert.match(markup, /data-i18n-aria-label="settings\.installed_model_aria"/);
   assert.doesNotMatch(markup, /Model used for Direct GGUF/);
   assert.match(markup, /data-model-refresh/);
   assert.match(markup, /data-model-scan-slot/);
@@ -1638,6 +1641,8 @@ test("workbench exposes responsive stacking and layered keyboard navigation", ()
   assert.doesNotMatch(mainSource, /role="(?:menu|menuitem|listbox|option)"|aria-haspopup="menu"/);
   assert.match(aspectRatioMarkup(()=>""), /class="h3ps-choice-menu h3ps-aspect-menu"[^>]*role="group"/);
   assert.match(aspectRatioMarkup(()=>""), /aria-pressed="false"\s+data-aspect="16:9"/);
+  assert.match(aspectRatioMarkup(()=>""), /data-i18n="aspect\.widescreen"/);
+  assert.match(aspectRatioMarkup(()=>""), /data-i18n="aspect\.square"/);
   assert.match(mainSource, /role="status" aria-live="polite" aria-atomic="true" data-status/);
   assert.match(mainSource, /if \(event\.key === "Tab"\)[\s\S]{0,1000}focusable/);
 });

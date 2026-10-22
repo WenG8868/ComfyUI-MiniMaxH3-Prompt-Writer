@@ -70,7 +70,7 @@ export const messages = {
   "settings.notifications": "Notifications",
   "settings.desktop_notifications": "Desktop notifications",
   "system_prompt.status": "Default",
-  "system_prompt.title": "System prompt",
+  "system_prompt.title": "System Prompt",
   "system_prompt.back": "Back",
   "system_prompt.standard_description": "Instructions used by T2VA, I2VA, FL2VA and L2VA.",
   "system_prompt.reference_description": "Instructions used by Reference mode.",
