@@ -441,9 +441,9 @@ function referenceComposerAssets() {
 function composerAddState() {
   const assets = studio.assets.filter((asset) => asset.mode === "Reference");
   const pictureCount = assets.filter((asset) => asset.type === "image").length;
-  if (studio.requestBusy) return { allowed: false, message: "Wait for the current Writer request to finish." };
-  if (pictureCount >= 9) return { allowed: false, message: "Remove a Picture before adding the composition." };
-  if (assets.length >= 12) return { allowed: false, message: "Remove a reference before adding the composition." };
+  if (studio.requestBusy) return { allowed: false, message: t("composer.wait_request") };
+  if (pictureCount >= 9) return { allowed: false, message: t("composer.remove_picture") };
+  if (assets.length >= 12) return { allowed: false, message: t("composer.remove_reference") };
   return { allowed: true, reference: `<Picture ${pictureCount + 1}>` };
 }
 
@@ -472,8 +472,12 @@ async function addComposedPicture({ blob, width, height, mimeType, filename, sou
   renderMedia("Reference");
   const added = result.assets[0];
   showToast(
-    `${added.reference} added`,
-    `Composed from ${sources.length} source${sources.length === 1 ? "" : "s"} · ${width}×${height} PNG.`,
+    msg("toast.media.composed.title", { reference: added.reference }),
+    msg(sources.length === 1 ? "toast.media.composed.one" : "toast.media.composed.other", {
+      count: sources.length,
+      width,
+      height,
+    }),
   );
 }
 
@@ -492,9 +496,9 @@ function notifyMediaCompatibility() {
   if(signature===studio.mediaCompatibilityNotice)return;
   studio.mediaCompatibilityNotice=signature;
   const messages=[];
-  if(pending.length)messages.push("Trim the video source to 2–15 seconds and Apply to use it as a reference.");
-  if(total>15)messages.push("Reference videos exceed 15 seconds in total. Prompt generation is still available; check H3 compatibility.");
-  if(messages.length)showToast("Reference media",messages.join(" "),null,null,{dismissOnWorkspaceClick:true});
+  if(pending.length)messages.push(t("toast.media.trim_hint"));
+  if(total>15)messages.push(t("toast.media.total_hint"));
+  if(messages.length)showToast(msg("toast.media.compatibility.title"),messages.join(" "),null,null,{dismissOnWorkspaceClick:true});
 }
 
 function renderMedia(mode) {
@@ -628,7 +632,7 @@ function acceptMediaAssets(assets) {
     updateBriefLayout(); renderPromptHighlights(); syncModifiedState(); saveCurrentModeDraft();
   } else saveModeDrafts(localStorage, studio.modeDrafts);
   studio.assets = assets;
-  if (missing) showToast("Reference removed", "Missing media tags are marked in your Single text. Replace or remove them before Generate or Refine.");
+  if (missing) showToast(msg("toast.media.reference_removed.title"), msg("toast.media.reference_removed.message"));
 }
 
 function bindMediaActions(mode) {
@@ -669,7 +673,7 @@ function bindMediaActions(mode) {
         acceptMediaAssets(result.assets);
         renderMedia(studio.mode);
       } catch (error) {
-        showToast(error.code || "Remove failed", error.message, error.details);
+        showErrorToast("toast.media.remove_failed.title", error);
       }
     });
   });
@@ -742,7 +746,7 @@ function bindMediaActions(mode) {
         acceptMediaAssets(result.assets);
         renderMedia(studio.mode);
       } catch (error) {
-        showToast(error.code || "Reorder failed", error.message, error.details);
+        showErrorToast("toast.media.reorder_failed.title", error);
       }
       return;
     }
@@ -753,7 +757,7 @@ function bindMediaActions(mode) {
 
 function previewAsset(asset) {
   if (!asset) return;
-  showToast(asset.reference, `${formatDuration(asset.duration)} audio reference loaded.`);
+  showToast(asset.reference, msg("toast.media.audio_loaded", { duration: formatDuration(asset.duration) }));
 }
 
 function chooseMedia(mode, replaceAssetId = null) {
@@ -769,10 +773,10 @@ async function uploadFiles(mode, files, replaceAssetId = null) {
   if (!files.length || studio.requestBusy) return;
   const existing = studio.assets.filter((asset) => asset.mode === mode);
   if (mode !== "Reference" && !replaceAssetId && existing.length + files.length > MODES[mode].limit) {
-    showToast("Reference slot is full", "Use Replace on the existing image.");
+    showToast(msg("toast.media.slot_full.title"), msg("toast.media.slot_full.message"));
     return;
   }
-  showToast("Processing media", "Creating previews and the ordered contact sheet…");
+  showToast(msg("toast.media.processing.title"), msg("toast.media.processing.message"));
   const previousAssets = [...studio.assets];
   try {
     const result = await uploadMedia(studio.sessionId, mode, files, replaceAssetId);
@@ -782,8 +786,8 @@ async function uploadFiles(mode, files, replaceAssetId = null) {
     else studio.assets = [...studio.assets, ...result.assets];
     if (audioWasAdded(previousAssets, studio.assets)) {
       showToast(
-        "Audio added",
-        "The prompt model can't hear audio files. Describe how the audio references should be used in the Creative Brief.",
+        msg("toast.media.audio_added.title"),
+        msg("toast.media.audio_added.message"),
         null,
         null,
         { durationMs: 6000 },
@@ -792,7 +796,7 @@ async function uploadFiles(mode, files, replaceAssetId = null) {
     renderMedia(studio.mode);
   } catch (error) {
     renderMedia(studio.mode);
-    showToast(error.code || "Upload failed", error.message, error.details);
+    showErrorToast("toast.media.upload_failed.title", error);
   }
 }
 
@@ -831,6 +835,12 @@ function showToast(title, message, details = null, action = null, options = {}) 
   }
 }
 
+function showErrorToast(titleKey, error, options = {}) {
+  console.error(`[H3 Writer] error code=${error?.code || "UNKNOWN"}`, error);
+  const localized = localizedError(error, "errors.UNKNOWN");
+  showToast(msg(titleKey), msg(localized.key, error?.params || {}), localized.technical, null, options);
+}
+
 function defaultModeDraft(mode) {
   if (mode === "Music3") return MUSIC3_DEFAULT_DRAFT;
   if (mode === "Reference") {
@@ -854,9 +864,12 @@ function currentBriefTextarea() {
 async function copyPromptText(text, music = false) {
   try {
     await navigator.clipboard.writeText(text);
-    showToast(music ? "Caption copied" : "Prompt copied", music ? "The generated Music 3 caption is on your clipboard." : "The generated H3 prompt is on your clipboard.");
+    showToast(
+      msg(music ? "toast.copy.caption.title" : "toast.copy.prompt.title"),
+      msg(music ? "toast.copy.caption.message" : "toast.copy.prompt.message"),
+    );
   } catch (error) {
-    showToast("Copy failed", "Clipboard access was denied.", error.message);
+    showToast(msg("toast.copy.failed.title"), msg("toast.copy.failed.message"), error.message);
   }
 }
 
@@ -885,9 +898,9 @@ function clearCurrentPrompts({ notify = true } = {}) {
   saveCurrentModeDraft();
   if (notify) {
     const detail = studio.mode === "Music3"
-      ? "The Music Brief and generated caption were cleared. Lyrics and media were kept."
-      : "The Creative Brief and generated prompt were cleared. Media was kept.";
-    showToast("Prompts cleared", detail);
+      ? msg("toast.clear.prompts.music")
+      : msg("toast.clear.prompts.video");
+    showToast(msg("toast.clear.prompts.title"), detail);
   }
   return true;
 }
@@ -900,10 +913,10 @@ async function clearCurrentMedia({ notify = true } = {}) {
 
 
     renderMedia(studio.mode);
-    if (notify) showToast("Media cleared", "The temporary session files were removed.");
+    if (notify) showToast(msg("toast.clear.media.title"), msg("toast.clear.media.message"));
     return true;
   } catch (error) {
-    showToast(error.code || "Clear failed", error.message, error.details);
+    showErrorToast("toast.clear.failed.title", error);
     return false;
   }
 }
@@ -914,14 +927,14 @@ async function clearEverything() {
   if (!await clearCurrentMedia({ notify: false })) return;
   const currentDraft = currentDraftFields();
   if (studio.mode !== mode || currentDraft.brief !== submittedDraft.brief || currentDraft.prompt !== submittedDraft.prompt) {
-    showToast("Media cleared", "Your current prompts were kept because the workspace changed.");
+    showToast(msg("toast.clear.media.title"), msg("toast.clear.media_workspace_changed.message"));
     return;
   }
   clearCurrentPrompts({ notify: false });
   const detail = studio.mode === "Music3"
-    ? "Media, Music Brief and generated caption were removed. Lyrics were kept."
-    : "Media, Creative Brief and generated prompt were removed.";
-  showToast("Everything cleared", detail);
+    ? msg("toast.clear.all.music")
+    : msg("toast.clear.all.video");
+  showToast(msg("toast.clear.all.title"), detail);
 }
 
 function saveCurrentModeDraft() {
@@ -960,7 +973,7 @@ function saveTextDraft() {
     const url = URL.createObjectURL(blob), link = document.createElement("a");
     link.href=url; link.download=draftFilename(value.kind); link.click();
     setTimeout(()=>URL.revokeObjectURL(url), 1000);
-  } catch(error) { showToast("Save draft", error.message); }
+  } catch(error) { showErrorToast("toast.draft.save_failed.title", error); }
 }
 
 async function loadTextDraft(value) {
@@ -968,7 +981,7 @@ async function loadTextDraft(value) {
   const owner = studio;
   let loaded = false;
   const mode = value.kind === "sequence" ? "Reference" : value.content.mode;
-  setGenerationState("busy", "Loading draft", "");
+  setGenerationState("busy", msg("status.loading_draft"), "");
   try {
     // Remove this mode's old references so identical labels cannot bind to unrelated media.
     const result = await clearMedia(studio.sessionId, mode);
@@ -994,8 +1007,8 @@ async function loadTextDraft(value) {
     }
     renderMedia(studio.mode);
     loaded = true;
-    showToast("Draft loaded", "Media is not included. Reattach and assign the original references before generating.", value.media.length ? {references:value.media} : null);
-  } catch(error) { showToast("Load draft",error.message); }
+    showToast(msg("toast.draft.loaded.title"), msg("toast.draft.loaded.message"), value.media.length ? {references:value.media} : null);
+  } catch(error) { showErrorToast("toast.draft.load_failed.title", error); }
   finally {
     if (studio === owner) {
       setGenerationState("idle", "", "");
@@ -1102,10 +1115,7 @@ function syncModeAvailability() {
 
 function generationModeIsAvailable() {
   if (isGenerationModeAvailable(studio.selectedModel, studio.mode)) return true;
-  showToast(
-    "Text-only Direct GGUF",
-    "Use T2VA or Music3, or add the matching mmproj to enable visual modes.",
-  );
+  showToast(msg("toast.generation.text_only.title"), msg("toast.generation.text_only.message"));
   return false;
 }
 
@@ -1114,14 +1124,14 @@ function disarmDraftDefaults() {
   clearTimeout(studio.draftDefaultsTimer);
   studio.draftDefaultsArmed = false;
   const label = studio.root.querySelector("[data-restore-default-drafts-label]");
-  if (label) label.textContent = "Restore default drafts";
+  if (label) label.textContent = t("toast.drafts.restore_label");
 }
 
 function restoreDefaultDrafts(event) {
   event.stopPropagation();
   if (!studio.draftDefaultsArmed) {
     studio.draftDefaultsArmed = true;
-    studio.root.querySelector("[data-restore-default-drafts-label]").textContent = "Click again to confirm";
+    studio.root.querySelector("[data-restore-default-drafts-label]").textContent = t("toast.drafts.confirm_label");
     clearTimeout(studio.draftDefaultsTimer);
     studio.draftDefaultsTimer = setTimeout(disarmDraftDefaults, 5000);
     return;
@@ -1130,7 +1140,7 @@ function restoreDefaultDrafts(event) {
   studio.modeDrafts = {};
   saveModeDrafts(localStorage, studio.modeDrafts);
   restoreModeDraft(studio.mode);
-  showToast("Default drafts restored", "Saved mode drafts were removed.");
+  showToast(msg("toast.drafts.restored.title"), msg("toast.drafts.restored.message"));
 }
 
 function hideToast() {
@@ -1146,15 +1156,11 @@ function hideToast() {
   toast.classList.remove("is-visible", "is-persistent", "has-action");
 }
 
-function thinkingFallbackMessage(result, outputLabel) {
-  if (
-    result.thinking_budget_reduced
+function thinkingFallbackMessage(result, output) {
+  const contextBound = result.thinking_budget_reduced
     && studio.selectedModel?.family === "gguf"
-    && Number(result.context_tokens || 0) < 24_576
-  ) {
-    return `Thinking used all the space available in the selected context. The ${outputLabel} was completed in standard mode. A larger Context setting can give Thinking more room.`;
-  }
-  return `Thinking used its full token budget. The ${outputLabel} was completed in standard mode.`;
+    && Number(result.context_tokens || 0) < 24_576;
+  return msg(`thinking.fallback.${contextBound ? "context" : "budget"}.${output}`);
 }
 
 function setGenerationState(state, label, detail) {
@@ -1231,7 +1237,7 @@ function writerAttemptIsCurrent(token) {
 async function prepareWriterVram(token) {
   if (token == null) return true;
   studio.vramHandoffInFlight = true;
-  setGenerationState("busy", "Freeing VRAM", "Preparing ComfyUI memory for the prompt model");
+  setGenerationState("busy", msg("status.freeing_vram"), msg("status.detail.freeing_vram"));
   try {
     await releaseComfyVramWhenIdle({
       getStatus,
@@ -1246,7 +1252,7 @@ async function prepareWriterVram(token) {
     return writerAttemptIsCurrent(token);
   } catch (error) {
     if (error.code !== "WRITER_PREPARATION_CANCELLED") {
-      showToast("Auto VRAM could not prepare memory", error.message, error.details);
+      showErrorToast("toast.vram.preparing_failed.title", error);
     }
     setGenerationState("idle", "", "");
     return false;
@@ -1310,9 +1316,9 @@ async function unloadWriterModelsBeforeQueue(signal) {
 function showVramHandoffQueueError(error) {
   const message = error.message || "Prompt Writer could not release its local model.";
   if (studio?.root.classList.contains("is-open")) {
-    showToast("Queue continuing without VRAM release", message, error.details);
+    showToast(msg("toast.vram.queue.title"), message, error.details);
   } else {
-    app.extensionManager?.toast?.add({severity:"warn", summary:"Auto VRAM: Queue continuing", detail:message, life:8000});
+    app.extensionManager?.toast?.add({severity:"warn", summary:t("toast.vram.queue.comfy_summary"), detail:message, life:8000});
   }
 }
 
@@ -1332,11 +1338,18 @@ function lifecycleTargets() {
 function lifecycleButtonMarkup(target, { stop = false } = {}) {
   const provider = target.family === "external" ? "external" : target.family === "ollama" ? "ollama" : "direct";
   const disabled = target.family === "external" && (["loading","unloading","unloaded"].includes(target.state) || (target.state === "unknown" && !target.writerOwned));
-  const label = target.state === "unloading" ? "Unloading…" : target.state === "loading" ? "Loading…" : stop ? "Stop & unload" : target.family === "external" ? "Unload" : target.family === "ollama" ? "Unload Ollama" : "Unload Direct";
+  const label = target.state === "unloading" ? msg("lifecycle.unloading")
+    : target.state === "loading" ? msg("lifecycle.loading")
+    : stop ? msg("lifecycle.stop_unload")
+    : target.family === "external" ? msg("lifecycle.unload")
+    : target.family === "ollama" ? msg("lifecycle.unload_ollama")
+    : msg("lifecycle.unload_direct");
   const title = stop
-    ? "Cancel the active request and unload its prompt model"
-    : `Unload ${target.modelId || (target.family === "ollama" ? "the Ollama model" : "the Direct model")}`;
-  return `<button class="h3ps-memory-action h3ps-prompt-lifecycle-action" type="button" data-lifecycle-family="${target.family}" ${disabled ? "disabled" : ""} ${target.modelId ? `data-lifecycle-model="${escapeHtml(target.modelId)}"` : ""} data-lifecycle-stop="${stop}" title="${escapeHtml(title)}"><span class="h3ps-provider-icon" data-provider-icon="${provider}" aria-hidden="true"></span>${label}</button>`;
+    ? msg("lifecycle.stop_title")
+    : msg("lifecycle.unload_title", {
+        model: target.modelId || t(target.family === "ollama" ? "lifecycle.ollama_model" : "lifecycle.direct_model"),
+      });
+  return `<button class="h3ps-memory-action h3ps-prompt-lifecycle-action" type="button" data-lifecycle-family="${target.family}" ${disabled ? "disabled" : ""} ${target.modelId ? `data-lifecycle-model="${escapeHtml(target.modelId)}"` : ""} data-lifecycle-stop="${stop}" title="${escapeHtml(messageText(title))}"><span class="h3ps-provider-icon" data-provider-icon="${provider}" aria-hidden="true"></span>${escapeHtml(messageText(label))}</button>`;
 }
 
 function syncLifecycleActions() {
@@ -1352,7 +1365,7 @@ function syncLifecycleActions() {
     return target.family !== activeTarget.family || target.modelId !== activeTarget.modelId;
   });
   const backgroundMarkup = background.length > 1
-    ? `<details class="h3ps-prompt-models-menu"><summary class="h3ps-memory-action">${icon("memory", 15)}Prompt models · ${background.length}</summary><span>${background.map((target) => lifecycleButtonMarkup(target)).join("")}</span></details>`
+    ? `<details class="h3ps-prompt-models-menu"><summary class="h3ps-memory-action">${icon("memory", 15)}${t("lifecycle.prompt_models", { count: background.length })}</summary><span>${background.map((target) => lifecycleButtonMarkup(target)).join("")}</span></details>`
     : background.map((target) => lifecycleButtonMarkup(target)).join("");
   slot.innerHTML = `${activeTarget ? lifecycleButtonMarkup(activeTarget, { stop: true }) : ""}${backgroundMarkup}`;
   slot.querySelectorAll("[data-lifecycle-family]").forEach((button) => button.addEventListener("click", runLifecycleAction));
@@ -1365,14 +1378,14 @@ async function releaseComfyVram({ retry = null, requiredFreeMb = null } = {}) {
   let shouldRetry = false;
   studio.comfyVramReleaseInFlight = true;
   button.disabled = true;
-  button.innerHTML = `<span class="h3ps-spinner"></span>Releasing…`;
+  button.innerHTML = `<span class="h3ps-spinner"></span>${t("vram.releasing")}`;
   try {
     const before = await getStatus(studio.ollamaHost);
     const beforeFree = Number(before.gpu_memory?.free_mb);
     const requiredFree = requiredFreeMb == null ? null : Number(requiredFreeMb);
     if (typeof retry !== "function" && requiredFree == null && comfyVramIsAlreadyEmpty(before)) {
       studio.gpuMemory = before.gpu_memory || studio.gpuMemory;
-      showToast("No ComfyUI models loaded", "VRAM is already free for Prompt Writer.");
+      showToast(msg("toast.vram.already_free.title"), msg("toast.vram.already_free.message"));
       return;
     }
     await freeComfyVram();
@@ -1391,21 +1404,26 @@ async function releaseComfyVram({ retry = null, requiredFreeMb = null } = {}) {
     if (typeof retry === "function") {
       shouldRetry = targetReached;
       if (!targetReached) {
-        const freeText = Number.isFinite(afterFree) ? `${(afterFree / 1024).toFixed(1)} GB is free.` : "Free VRAM could not be measured.";
-        const requiredText = Number.isFinite(requiredFree) ? ` About ${(requiredFree / 1024).toFixed(1)} GB is required.` : "";
-        showToast("VRAM release is still completing", `${freeText}${requiredText} Generate again after ComfyUI finishes unloading.`);
+        const freeGbText = (afterFree / 1024).toFixed(1);
+        const requiredGbText = (requiredFree / 1024).toFixed(1);
+        const message = Number.isFinite(afterFree) && Number.isFinite(requiredFree)
+          ? msg("toast.vram.still_releasing.measured", { free: freeGbText, required: requiredGbText })
+          : Number.isFinite(afterFree)
+          ? msg("toast.vram.still_releasing.free_only", { free: freeGbText })
+          : msg("toast.vram.still_releasing.unknown");
+        showToast(msg("toast.vram.still_releasing.title"), message);
       }
     } else if (releasedMb >= 64) {
-      showToast("ComfyUI VRAM released", `${(releasedMb / 1024).toFixed(1)} GB freed. Workflow and cached node results were kept.`);
+      showToast(msg("toast.vram.released.title"), msg("toast.vram.released.message", { gb: (releasedMb / 1024).toFixed(1) }));
     } else {
-      showToast("ComfyUI VRAM release requested", "No immediate VRAM change was detected. No workflow model may be loaded, or an active workflow must finish first.");
+      showToast(msg("toast.vram.requested.title"), msg("toast.vram.requested.message"));
     }
   } catch (error) {
-    showToast("VRAM release failed", error.message);
+    showErrorToast("toast.vram.failed.title", error);
   } finally {
     studio.comfyVramReleaseInFlight = false;
     button.disabled = false;
-    button.innerHTML = `${icon("memory", 15)}Free ComfyUI VRAM`;
+    button.innerHTML = `${icon("memory", 15)}<span data-i18n="workspace.free_comfy_vram">${t("workspace.free_comfy_vram")}</span>`;
     syncLifecycleActions();
   }
   if (shouldRetry) await retry();
@@ -1415,12 +1433,12 @@ function showVramRetry(error, retry) {
   const freeGb = Number(error.details?.free_mb) / 1024;
   const requiredGb = Number(error.details?.required_free_mb) / 1024;
   const message = Number.isFinite(freeGb) && Number.isFinite(requiredGb)
-    ? `${freeGb.toFixed(1)} GB is free; this runtime needs about ${requiredGb.toFixed(1)} GB.`
+    ? msg("toast.vram.retry.message", { free: freeGb.toFixed(1), required: requiredGb.toFixed(1) })
     : error.message;
   const action = !HOST_CAPABILITIES.comfyMemory || writerAutoVramApplies()
     ? null
-    : { label: "Free ComfyUI VRAM & retry", onClick: () => releaseComfyVram({ retry, requiredFreeMb: error.details?.required_free_mb }) };
-  showToast("Not enough free VRAM", message, null, action);
+    : { label: msg("toast.vram.retry.action"), onClick: () => releaseComfyVram({ retry, requiredFreeMb: error.details?.required_free_mb }) };
+  showToast(msg("toast.vram.retry.title"), message, null, action);
 }
 
 async function runLifecycleAction(event) {
@@ -1429,12 +1447,12 @@ async function runLifecycleAction(event) {
   const family = button.dataset.lifecycleFamily;
   const modelId = button.dataset.lifecycleModel || null;
   const stop = button.dataset.lifecycleStop === "true";
-  if (stop) setGenerationState("busy", "Stopping & unloading", "Cancelling the request and unloading its prompt model");
+  if (stop) setGenerationState("busy", msg("status.stopping_unloading"), msg("status.detail.stopping_unloading"));
   button.disabled = true;
   if (family === "external") {
     const target = studio.promptResidency.external?.find(t => t.model_id === modelId);
     if (target) target.state = "unloading";
-    button.textContent = "Unloading…";
+    button.textContent = t("lifecycle.unloading");
   }
   try {
     await unloadModel({ family, model_id: modelId, ollama_host: family === "ollama" ? studio.ollamaHost : null });
@@ -1442,15 +1460,15 @@ async function runLifecycleAction(event) {
     else if(family === "external" && !stop) studio.promptResidency.external = (studio.promptResidency.external||[]).map(t=>t.model_id===modelId ? {...t,state:"unloaded",writer_owned:false} : t);
     else if(family === "ollama") studio.promptResidency.ollama = studio.promptResidency.ollama.filter((name) => name !== modelId);
     showToast(
-      stop ? "Stop & unload requested" : family === "external" ? "External model unloaded" : family === "ollama" ? "Ollama model unloaded" : "Direct model unloaded",
-      stop ? "The request will stop and release its model at the next safe point." : "GPU memory used by the prompt model was released.",
+      msg(stop ? "toast.lifecycle.stopped.title" : family === "external" ? "toast.lifecycle.external.title" : family === "ollama" ? "toast.lifecycle.ollama.title" : "toast.lifecycle.direct.title"),
+      msg(stop ? "toast.lifecycle.stopped.message" : "toast.lifecycle.unloaded.message"),
     );
   } catch (error) {
     if (family === "external") {
       const target = studio.promptResidency.external?.find(t => t.model_id === modelId);
       if (target) target.state = "unknown";
     }
-    showToast(error.code || "Unload failed", error.message, error.details);
+    showErrorToast("toast.lifecycle.failed.title", error);
   } finally {
     button.disabled = false;
     syncLifecycleActions();
@@ -1460,16 +1478,20 @@ async function runLifecycleAction(event) {
 async function startGenerationPreview() {
   if (studio.vramHandoffInFlight) return;
   if (studio.requestBusy) {
-    setGenerationState("busy", "Cancelling", "Stopping after the current token");
+    setGenerationState("busy", msg("status.cancelling"), msg("status.detail.cancel_token"));
     await cancel();
     return;
   }
   if (!studio.selectedModel) {
-    showToast("No prompt model selected", "Choose a local model, connect llama.cpp, or configure an API provider.");
+    showToast(msg("toast.generation.no_model.title"), msg("toast.generation.no_model.message"));
     return;
   }
   if (!studio.selectedModel.runtime_ready) {
-    showToast("Model setup is incomplete", studio.selectedModel.setup_message || `Missing: ${studio.selectedModel.missing_dependencies.join(", ")}. Open the model menu to finish setup.`);
+    showToast(
+      msg("toast.generation.setup_incomplete.title"),
+      studio.selectedModel.setup_message
+        || msg("toast.generation.setup_incomplete.message", { missing: studio.selectedModel.missing_dependencies.join(", ") }),
+    );
     return;
   }
   if (!generationModeIsAvailable()) return;
@@ -1479,14 +1501,21 @@ async function startGenerationPreview() {
   const apiProvider = studio.selectedModel.family === "api";
   const remote = external || apiProvider;
   markActiveWriterRequest();
-  const generationDetail = external ? `${modelName} · the server may load its model if idle` : apiProvider ? `${modelName} · ${studio.selectedModel.api_preset}` : modelName;
-  setGenerationState("busy", remote ? "Contacting provider" : "Loading model", generationDetail);
+  const generationDetail = external
+    ? msg("status.detail.external_idle", { model: modelName })
+    : apiProvider ? msg("status.detail.api", { model: modelName, preset: studio.selectedModel.api_preset }) : modelName;
+  setGenerationState("busy", remote ? msg("status.contacting_provider") : msg("status.loading_model"), generationDetail);
   let pollingActive = true;
   studio.statusTimer = setInterval(async () => {
     try {
       const status = await getStatus(studio.ollamaHost);
       if (!pollingActive) return;
-      const labels = { loading_model: remote ? "Contacting provider" : "Loading model", processing_media: "Processing references", generating: "Generating", cancelling: "Cancelling" };
+      const labels = {
+        loading_model: remote ? msg("status.contacting_provider") : msg("status.loading_model"),
+        processing_media: msg("status.processing_references"),
+        generating: msg("status.generating"),
+        cancelling: msg("status.cancelling"),
+      };
       if (labels[status.phase]) setGenerationState("busy", labels[status.phase], generationDetail);
     } catch {}
   }, 650);
@@ -1508,40 +1537,65 @@ async function startGenerationPreview() {
     studio.refineRestore = null;
     studio.root.querySelector("[data-refine-restore]").hidden = true;
     if (result.thinking_fallback) {
-      showToast("Prompt completed", thinkingFallbackMessage(result, "final prompt"), null, null, { dismissOnWorkspaceClick: true });
+      showToast(msg("toast.generation.completed.title"), thinkingFallbackMessage(result, "final_prompt"), null, null, { dismissOnWorkspaceClick: true });
     } else if (result.format_repair_applied) {
       const repairDetail = result.format_repair_multimodal
         ? "the existing uploaded references were checked again and the prompt was corrected"
         : `${result.format_repair_method} corrected it without re-uploading media`;
-      showToast("Prompt generated", `The first draft failed ${result.format_repair_reason}; ${repairDetail}.`, null, null, { dismissOnWorkspaceClick: true });
+      showToast(
+        msg("toast.generation.prompt_generated.title"),
+        msg("toast.generation.repair_applied.message"),
+        `The first draft failed ${result.format_repair_reason}; ${repairDetail}.`,
+        null,
+        { dismissOnWorkspaceClick: true },
+      );
     } else if (result.format_repair_failure) {
-      showToast("Prompt generated with a format warning", `The first draft failed ${result.format_repair_reason}; the safe repair was rejected because ${result.format_repair_failure}.`, null, null, { dismissOnWorkspaceClick: true });
+      showToast(
+        msg("toast.generation.format_warning.title"),
+        msg("toast.generation.repair_failed.message"),
+        `The first draft failed ${result.format_repair_reason}; the safe repair was rejected because ${result.format_repair_failure}.`,
+        null,
+        { dismissOnWorkspaceClick: true },
+      );
     } else {
+      const metrics = msg("toast.generation.metrics", {
+        total: result.total_seconds.toFixed(1),
+        tps: result.tokens_per_second.toFixed(1),
+      });
       const details = [
-        `${result.total_seconds.toFixed(1)}s`,
-        `${result.tokens_per_second.toFixed(1)} tok/s`,
-        result.api_provider ? "Reasoning provider managed" : external ? null : `Thinking ${result.thinking ? "on" : "off"}`,
-      ];
-      showToast(studio.mode === "Music3" ? "Caption generated" : "Prompt generated", details.filter(Boolean).join(" · "));
+        metrics,
+        result.api_provider
+          ? msg("toast.generation.reasoning_managed")
+          : external ? null : msg("toast.generation.thinking", {
+              state: t(result.thinking ? "toast.generation.thinking_on" : "toast.generation.thinking_off"),
+            }),
+      ].filter(Boolean);
+      showToast(
+        msg(studio.mode === "Music3" ? "toast.generation.caption_generated.title" : "toast.generation.prompt_generated.title"),
+        details.map((item) => messageText(item)).join(" · "),
+      );
     }
-    studio.desktopNotifications.notify("Generation finished. Your prompt is ready.");
-    if (result.lifecycle_warning) showToast("Model cleanup", result.lifecycle_warning, null, null, {dismissOnWorkspaceClick:true});
+    studio.desktopNotifications.notify(t("notification.generation_ready"));
+    if (result.lifecycle_warning) showToast(msg("toast.generation.cleanup.title"), result.lifecycle_warning, null, null, {dismissOnWorkspaceClick:true});
   } catch (error) {
-    if (error.code !== "GENERATION_CANCELLED") studio.desktopNotifications.notify("Generation failed. Open Writer for details.");
+    if (error.code !== "GENERATION_CANCELLED") studio.desktopNotifications.notify(t("notification.generation_failed"));
     if (error.code === "GENERATION_CANCELLED") {
-      showToast("Generation cancelled", "The active request stopped.");
+      showToast(msg("toast.generation.cancelled.title"), msg("toast.generation.cancelled.message"));
     } else if (error.code === "INSUFFICIENT_FREE_VRAM") {
       showVramRetry(error, startGenerationPreview);
     } else if (error.code === "EXTERNAL_VISION_REQUIRED") {
-      showToast("Vision model required", `${error.message} ${error.details?.suggestion || ""}`.trim());
+      showErrorToast("toast.generation.vision_required.title", error);
     } else if (error.code === "CONTEXT_BUDGET_EXCEEDED" && error.details?.suggested_context_profile && studio.selectedModel?.family === "gguf") {
       const target = error.details.suggested_context_profile;
       const targetLabel = CONTEXT_LABELS[target] || target;
       showToast(
-        "More context is needed",
-        `This request needs at least ${targetLabel} context. ${CONTEXT_LABELS[studio.contextProfile]} cannot fit the current references.`,
+        msg("toast.generation.more_context.title"),
+        msg("toast.generation.more_context.message", {
+          target: targetLabel,
+          current: CONTEXT_LABELS[studio.contextProfile] || studio.contextProfile,
+        }),
         null,
-        { label: `Use ${targetLabel}`, onClick: () => {
+        { label: msg("toast.generation.more_context.action", { context: targetLabel }), onClick: () => {
           studio.contextProfile = target;
           rememberRuntimePreferences();
           saveUserPreferences(localStorage, studio);
@@ -1550,7 +1604,7 @@ async function startGenerationPreview() {
         } },
       );
     } else {
-      showToast(error.code || "Generation failed", error.message, error.details);
+      showErrorToast("toast.generation.failed.title", error);
     }
   } finally {
     pollingActive = false;
@@ -2851,11 +2905,11 @@ async function cancelLyricsRefinement() {
     return;
   }
   const submit = studio.root.querySelector("[data-lyrics-refine-submit]");
-  submit.innerHTML = `<span class="h3ps-spinner"></span>Cancelling…`;
+  submit.innerHTML = `<span class="h3ps-spinner"></span>${t("toast.lyrics.cancelling")}`;
   try {
     await cancel();
   } catch (error) {
-    showToast(error.code || "Cancel failed", error.message, error.details);
+    showErrorToast("toast.lyrics.cancel_failed.title", error);
   }
 }
 
@@ -2869,19 +2923,22 @@ async function submitLyricsRefinement() {
   const musicBrief = studio.root.querySelector("[data-music-brief]").value.trim();
   if (submit.disabled || studio.requestBusy) return;
   if (currentLyrics.trim() && !instruction) {
-    showToast("Add a revision note", "Describe how the existing Lyrics should change.");
+    showToast(msg("toast.lyrics.add_note.title"), msg("toast.lyrics.add_note.message"));
     return;
   }
   if (!currentLyrics.trim() && !instruction && (!useMusicBrief || !musicBrief)) {
-    showToast("Describe the Lyrics", "Add an instruction or include a Music Brief to create new Lyrics.");
+    showToast(msg("toast.lyrics.describe.title"), msg("toast.lyrics.describe.message"));
     return;
   }
   if (!studio.selectedModel) {
-    showToast("No prompt model selected", "Choose a local model, connect llama.cpp, or configure an API provider.");
+    showToast(msg("toast.generation.no_model.title"), msg("toast.generation.no_model.message"));
     return;
   }
   if (!studio.selectedModel.runtime_ready) {
-    showToast("Model setup is incomplete", studio.selectedModel.setup_message || `Missing: ${studio.selectedModel.missing_dependencies.join(", ")}.`);
+    showToast(
+      msg("toast.generation.setup_incomplete.title"),
+      studio.selectedModel.setup_message || msg("toast.generation.setup_incomplete.short", { missing: studio.selectedModel.missing_dependencies.join(", ") }),
+    );
     return;
   }
   if (!generationModeIsAvailable()) return;
@@ -2890,8 +2947,12 @@ async function submitLyricsRefinement() {
   markActiveWriterRequest();
   studio.lyricsRequestBusy = true;
   submit.disabled = true;
-  submit.innerHTML = `<span class="h3ps-spinner"></span>${currentLyrics.trim() ? "Refining…" : "Creating…"}`;
-  setGenerationState("busy", currentLyrics.trim() ? "Refining lyrics" : "Creating lyrics", studio.selectedModel.name.split("/").pop());
+  submit.innerHTML = `<span class="h3ps-spinner"></span>${t(currentLyrics.trim() ? "toast.lyrics.refining" : "toast.lyrics.creating")}`;
+  setGenerationState(
+    "busy",
+    msg(currentLyrics.trim() ? "status.refining_lyrics" : "status.creating_lyrics"),
+    studio.selectedModel.name.split("/").pop(),
+  );
   try {
     const result = await vramHandoffCoordinator.trackWriterRequest(refine(buildLyricsRefinePayload(studio, {
       currentLyrics,
@@ -2901,26 +2962,26 @@ async function submitLyricsRefinement() {
       seed: newGenerationSeed(),
     })));
     if (lyrics.value !== currentLyrics) {
-      showToast("Lyrics kept", "The rewrite was not applied because you edited the Lyrics.");
+      showToast(msg("toast.lyrics.kept.title"), msg("toast.lyrics.kept.message"));
       return;
     }
     studio.lyricsRestore = { lyrics: currentLyrics };
     lyrics.value = result.prompt;
     const restore = panel.querySelector("[data-lyrics-refine-restore]");
-    restore.textContent = currentLyrics.trim() ? "Restore previous" : "Remove generated";
+    restore.textContent = currentLyrics.trim() ? t("toast.lyrics.restore_previous") : t("toast.lyrics.remove_generated");
     restore.hidden = false;
     updateMusicLyricsCount();
     saveCurrentModeDraft();
-    studio.desktopNotifications.notify("Lyrics request finished.");
+    studio.desktopNotifications.notify(t("toast.lyrics.finished_notification"));
     showToast(
-      currentLyrics.trim() ? "Lyrics rewritten" : "Lyrics created",
-      `${result.total_seconds.toFixed(1)}s · ${result.tokens_per_second.toFixed(1)} tok/s`,
+      msg(currentLyrics.trim() ? "toast.lyrics.rewritten.title" : "toast.lyrics.created.title"),
+      msg("toast.lyrics.metrics", { total: result.total_seconds.toFixed(1), tps: result.tokens_per_second.toFixed(1) }),
     );
   } catch (error) {
-    if (error.code !== "GENERATION_CANCELLED") studio.desktopNotifications.notify("Lyrics request failed. Open Writer for details.");
-    if (error.code === "GENERATION_CANCELLED") showToast("Lyrics request cancelled", "The previous Lyrics were kept.");
+    if (error.code !== "GENERATION_CANCELLED") studio.desktopNotifications.notify(t("toast.lyrics.failed_notification"));
+    if (error.code === "GENERATION_CANCELLED") showToast(msg("toast.lyrics.cancelled.title"), msg("toast.lyrics.cancelled.message"));
     else if (error.code === "INSUFFICIENT_FREE_VRAM") showVramRetry(error, submitLyricsRefinement);
-    else showToast(error.code || "Lyrics request failed", error.message, error.details);
+    else showErrorToast("toast.lyrics.failed.title", error);
   } finally {
     studio.lyricsRequestBusy = false;
     submit.disabled = false;
@@ -2941,15 +3002,18 @@ async function submitRefinement() {
   const output = studio.root.querySelector("[data-output]");
   if (submit.disabled || studio.requestBusy) return;
   if (!instruction) {
-    showToast("Add a revision note", "Tell the model what should change in the current prompt.");
+    showToast(msg("toast.refine.add_note.title"), msg("toast.refine.add_note.message"));
     return;
   }
   if (!studio.selectedModel) {
-    showToast("No prompt model selected", "Choose a local model, connect llama.cpp, or configure an API provider.");
+    showToast(msg("toast.generation.no_model.title"), msg("toast.generation.no_model.message"));
     return;
   }
   if (!studio.selectedModel.runtime_ready) {
-    showToast("Model setup is incomplete", studio.selectedModel.setup_message || `Missing: ${studio.selectedModel.missing_dependencies.join(", ")}.`);
+    showToast(
+      msg("toast.generation.setup_incomplete.title"),
+      studio.selectedModel.setup_message || msg("toast.generation.setup_incomplete.short", { missing: studio.selectedModel.missing_dependencies.join(", ") }),
+    );
     return;
   }
   if (!generationModeIsAvailable()) return;
@@ -2959,8 +3023,8 @@ async function submitRefinement() {
   const previousMeta = studio.root.querySelector(".h3ps-editor-meta span:last-child").textContent;
   markActiveWriterRequest();
   submit.disabled = true;
-  submit.innerHTML = `<span class="h3ps-spinner"></span>Refining…`;
-  setGenerationState("busy", "Refining prompt", studio.selectedModel.name.split("/").pop());
+  submit.innerHTML = `<span class="h3ps-spinner"></span>${t("toast.refine.refining")}`;
+  setGenerationState("busy", msg("status.refining_prompt"), studio.selectedModel.name.split("/").pop());
   try {
     const result = await vramHandoffCoordinator.trackWriterRequest(refine(buildRefinePayload(studio, {
       currentPrompt: previousPrompt,
@@ -2970,7 +3034,7 @@ async function submitRefinement() {
       seed: newGenerationSeed(),
     })));
     if (output.value !== previousPrompt) {
-      showToast("Prompt kept", "The rewrite was not applied because you edited the prompt.");
+      showToast(msg("toast.refine.kept.title"), msg("toast.refine.kept.message"));
       return;
     }
     studio.refineRestore = {
@@ -2991,23 +3055,28 @@ async function submitRefinement() {
     studio.root.querySelector(".h3ps-editor-meta span:last-child").textContent = studio.lastModelMeta;
     syncModifiedState();
     saveCurrentModeDraft();
-    studio.desktopNotifications.notify("Refinement finished. Your prompt is ready.");
+    studio.desktopNotifications.notify(t("toast.refine.ready_notification"));
     showToast(
-      result.thinking_fallback ? "Rewrite completed" : "Prompt rewritten",
+      msg(result.thinking_fallback ? "toast.refine.completed.title" : "toast.refine.rewritten.title"),
       result.thinking_fallback
         ? thinkingFallbackMessage(result, "rewrite")
         : result.format_repair_applied
-          ? result.format_repair_multimodal
+          ? msg("toast.refine.repair_applied.message")
+        : result.format_repair_failure
+          ? msg("toast.refine.repair_failed.message")
+        : msg("toast.refine.metrics", { total: result.total_seconds.toFixed(1), tps: result.tokens_per_second.toFixed(1) }),
+      result.format_repair_applied
+        ? (result.format_repair_multimodal
             ? `The first draft failed ${result.format_repair_reason}; the existing references were checked again and repaired once.`
-            : `The first draft failed ${result.format_repair_reason}; its format was repaired once without media.`
+            : `The first draft failed ${result.format_repair_reason}; its format was repaired once without media.`)
         : result.format_repair_failure
           ? `Format warning: ${result.format_repair_reason}; safe repair rejected because ${result.format_repair_failure}.`
-        : `${result.total_seconds.toFixed(1)}s · ${result.tokens_per_second.toFixed(1)} tok/s · no media re-upload`,
+          : null,
     );
   } catch (error) {
-    if (error.code !== "GENERATION_CANCELLED") studio.desktopNotifications.notify("Refinement failed. Open Writer for details.");
+    if (error.code !== "GENERATION_CANCELLED") studio.desktopNotifications.notify(t("toast.refine.failed_notification"));
     if (error.code === "INSUFFICIENT_FREE_VRAM") showVramRetry(error, submitRefinement);
-    else showToast(error.code || "Refinement failed", error.message, error.details);
+    else showErrorToast("toast.refine.failed.title", error);
   } finally {
     submit.disabled = false;
     submit.innerHTML = `${icon("spark", 13)} Refine`;
@@ -3350,7 +3419,7 @@ function createStudio() {
     if (open) modal.removeAttribute("aria-modal");
     else if (root.classList.contains("is-open")) modal.setAttribute("aria-modal", "true");
   };
-  const mediaToolUnavailable = (message) => showToast("Media tool unavailable", message);
+  const mediaToolUnavailable = (message) => showToast(msg("toast.media_tool.unavailable.title"), message);
   studio.mediaComposer = createLazyMediaTool(root, async () => {
     const { createMediaComposer } = await import("./media_composer.js");
     return createMediaComposer({
@@ -3358,7 +3427,7 @@ function createStudio() {
       icon,
       onAddPicture: addComposedPicture,
       getAddState: composerAddState,
-      notify: (kind, message) => showToast(kind === "error" ? "Composer failed" : "Media Composer", message),
+      notify: (kind, message) => showToast(msg(kind === "error" ? "toast.composer.failed.title" : "toast.composer.title"), message),
       onOpenChange: onMediaToolOpenChange,
     });
   }, mediaToolUnavailable);
@@ -3371,22 +3440,25 @@ function createStudio() {
         const file = new File([blob], filename, { type: "image/png" });
         const result = await uploadMedia(studio.sessionId, "Reference", [file]);
         studio.assets.push(...result.assets);
-        showToast("Picture added", result.assets[0].reference);
+        showToast(msg("toast.media.picture_added.title"), result.assets[0].reference);
         renderMedia(studio.mode);
       },
       onAddAudio: async (blob, filename) => {
         const result = await uploadMedia(studio.sessionId, "Reference", [new File([blob], filename, { type: "audio/wav" })]);
         studio.assets.push(...result.assets);
-        showToast("Audio added", `${result.assets[0].reference}. Connect the downloaded WAV separately in H3. Writer does not analyze sound; describe its role in the Brief.`);
+        showToast(
+          msg("toast.media.audio_added.title"),
+          msg("toast.media.editor_audio.message", { reference: result.assets[0].reference }),
+        );
         renderMedia(studio.mode);
       },
       request: (assetId, options) => editMedia(studio.sessionId, assetId, options),
       onSaved: (result) => {
-        showToast("Media applied", "Crop and trim applied. The original source is preserved.");
+        showToast(msg("toast.media.applied.title"), msg("toast.media.applied.message"));
         acceptMediaAssets(result.assets);
         renderMedia(studio.mode);
       },
-      notify: (message) => showToast("Media Editor", message),
+      notify: (message) => showToast(msg("toast.media_editor.title"), message),
       onOpenChange: onMediaToolOpenChange,
     });
   }, mediaToolUnavailable);
@@ -3505,11 +3577,17 @@ function createStudio() {
     const file=draftInput.files[0]; draftInput.value="";
     if(!file || studio.requestBusy) return;
     try {
-      if(file.size>2_000_000) throw Error("Draft file is too large (maximum 2 MB).");
+      if(file.size>2_000_000) {
+        throw Object.assign(Error("Draft file is too large (maximum 2 MB)."), { code: "DRAFT_TOO_LARGE" });
+      }
       const value=parseDraft(await file.text());
-      showToast("Load text draft?", "This replaces the target draft and clears its current media. Files are not included; reattach the original references after loading.",
-        value.media.length ? {references:value.media} : null, {label:"Load draft",onClick:()=>loadTextDraft(value)});
-    } catch(error) { showToast("Load draft",error.message); }
+      showToast(
+        msg("toast.draft.confirm.title"),
+        msg("toast.draft.confirm.message"),
+        value.media.length ? {references:value.media} : null,
+        {label:msg("toast.draft.confirm.action"),onClick:()=>loadTextDraft(value)},
+      );
+    } catch(error) { showErrorToast("toast.draft.load_failed.title", error); }
   };
   root.querySelector("[data-restore-default-drafts]").addEventListener("click", restoreDefaultDrafts);
   root.querySelector("[data-comfy-memory-action]").addEventListener("click", () => releaseComfyVram());
@@ -3519,7 +3597,7 @@ function createStudio() {
     root.querySelector("[data-guide-toggle]").setAttribute("aria-expanded", String(!menu.hidden));
     if (menu.hidden) return;
     if (studio.mode === "Music3") {
-      menu.innerHTML = `<a href="${MUSIC3_GUIDE_URL}" target="_blank" rel="noopener noreferrer"><strong>Music Caption Rewriter</strong><small>Official MiniMax Music 3 guide</small></a>`;
+      menu.innerHTML = `<a href="${MUSIC3_GUIDE_URL}" target="_blank" rel="noopener noreferrer"><strong>${t("guide.music.title")}</strong><small>${t("guide.music.subtitle")}</small></a>`;
       return;
     }
     try {
@@ -3529,7 +3607,7 @@ function createStudio() {
       }
       menu.innerHTML = studio.guides.map((guide) => `<a href="${escapeHtml(guide.source_url)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(guide.filename)}</strong><small>${escapeHtml(guide.modes.join(" · "))}</small></a>`).join("");
     } catch (error) {
-      showToast(error.code || "Guide unavailable", error.message, error.details);
+      showErrorToast("toast.guides.unavailable.title", error);
     }
   });
 
@@ -3865,14 +3943,16 @@ function createStudio() {
     cancel: (operationId) => cancelSequence(operationId, studio.sessionId),
     busy: (busy) => {
       if (busy) markActiveWriterRequest(); else clearActiveWriterRequest();
-      setGenerationState(busy ? "busy" : "idle", "Generating sequence", "Completed prompts are kept as each chunk finishes");
+      setGenerationState(busy ? "busy" : "idle", msg("status.generating_sequence"), msg("status.detail.sequence_kept"));
       root.querySelector(".h3ps-generation-options").inert = busy;
       root.querySelector("[data-settings-view]").inert = busy;
     },
     refresh: () => { syncWorkspace(); renderMedia(studio.mode); },
     clearMedia: () => clearCurrentMedia(),
-    settled: (status) => studio.desktopNotifications.notify(status === "complete" ? "Sequence generation finished." : "Sequence needs attention. Open Writer for details."),
-    error: (error) => showToast("Sequence", error.message, error.details || null, null, sequenceNotificationOptions(error)),
+    settled: (status) => studio.desktopNotifications.notify(
+      t(status === "complete" ? "notification.sequence_done" : "notification.sequence_attention"),
+    ),
+    error: (error) => showErrorToast("toast.sequence.title", error, sequenceNotificationOptions(error)),
     copy: (text) => copyPromptText(text),
     insert: (editor, reference) => insertReferenceAtCaret(editor, reference, editor.selectionStart),
   });
@@ -3939,8 +4019,8 @@ function supportsWorkflowMedia() {
 async function openFloatingMedia() {
   const current = createStudio();
   const hasMedia = () => current.assets.some(asset => ["image", "video", "audio"].includes(asset.type) && asset.content_url);
-  if (!hasMedia()) { openStudio(); showToast("Add media first", ""); return; }
-  if (!supportsWorkflowMedia()) { openStudio(); showToast("Workflow canvas unavailable", ""); return; }
+  if (!hasMedia()) { openStudio(); showToast(msg("media.add_first"), ""); return; }
+  if (!supportsWorkflowMedia()) { openStudio(); showToast(msg("toast.media.workflow_unavailable.title"), ""); return; }
   const request = ++mediaPanelRequest;
   try {
     if (!current.floatingMedia) {

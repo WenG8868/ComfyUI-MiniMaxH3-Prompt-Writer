@@ -5,7 +5,7 @@ import "./desktop_notifications.mjs";
 import { Window } from "happy-dom";
 import { generationButtonMarkup } from "../web/writer_controls.js";
 import { aspectRatioMarkup, splitMenuMarkup } from "../web/writer_controls.js";
-import { configureI18n, msg, t } from "../web/i18n.js";
+import { configureI18n, localizedError, messageText, msg, t } from "../web/i18n.js";
 import { writeToastContent } from "../web/toast.js";
 import { writeStatusContent } from "../web/status.js";
 import { settingsMarkup, generateModelSummaryMarkup } from "../web/settings.js";
@@ -514,8 +514,7 @@ test("technical errors reuse workspace-click dismissal without closing on the op
 
 test("Thinking fallback suggests more context only when Direct GGUF was context-limited", () => {
   assert.match(mainSource, /result\.thinking_budget_reduced[\s\S]{0,160}studio\.selectedModel\?\.family === "gguf"/);
-  assert.match(mainSource, /A larger Context setting can give Thinking more room\./);
-  assert.match(mainSource, /Thinking used its full token budget\./);
+  assert.match(mainSource, /msg\(`thinking\.fallback\.\$\{contextBound \? "context" : "budget"\}\.\$\{output\}`\)/);
   assert.doesNotMatch(mainSource, /Thinking reached its budget —/);
 });
 
@@ -737,7 +736,7 @@ test("Reference insertion uses the caret without replacing selected text and emi
 });
 
 test("Audio added notice remains visible for six seconds", () => {
-  assert.match(mainSource, /"Audio added"[\s\S]{0,280}\{ durationMs: 6000 \}/);
+  assert.match(mainSource, /msg\("toast\.media\.audio_added\.title"\)[\s\S]{0,280}\{ durationMs: 6000 \}/);
 });
 
 test("mode drafts round trip prompts longer than 16k without truncation", () => {
@@ -1028,7 +1027,7 @@ test("External llama.cpp keeps reasoning under server control", () => {
   assert.match(mainSource, /externalManaged = studio\.selectedModel\?\.family === "external"/);
   assert.match(mainSource, /Thinking is controlled by the external llama\.cpp server\./);
   assert.match(mainSource, /--reasoning on --reasoning-effort low/);
-  assert.match(mainSource, /external \? null : `Thinking/);
+  assert.match(mainSource, /external \? null : msg\("toast\.generation\.thinking"/);
   assert.match(stateSource, /state\.selectedModel\?\.family === "external" \? false : state\.thinking/);
 });
 
@@ -1047,7 +1046,8 @@ test("External llama.cpp offers capability-driven two-way Auto VRAM", () => {
 
 test("verified router manual Unload stays visible across residency refreshes",()=>{
   const start=mainSource.indexOf('function lifecycleTargets()'), end=mainSource.indexOf('function syncLifecycleActions',start);
-  const render=new Function('studio','escapeHtml',mainSource.slice(start,end)+'; return lifecycleTargets().map(t=>lifecycleButtonMarkup(t)).join("");');
+  const renderSource=new Function('studio','escapeHtml','t','msg','messageText',mainSource.slice(start,end)+'; return lifecycleTargets().map(t=>lifecycleButtonMarkup(t)).join("");');
+  const render=(studio,escapeHtml)=>renderSource(studio,escapeHtml,t,msg,messageText);
   const id='external::local::writer';
   for (const [state,owned,enabled] of [['loaded',true,true],['sleeping',false,true],['loading',true,false],['unloading',true,false],['unloaded',false,false],['unknown',true,true],['unknown',false,false]]) {
     const html=render({selectedModel:{id,family:'external',lifecycle_supported:true},promptResidency:{direct:null,ollama:[],external:[{model_id:id,state,writer_owned:owned}]}},String);
@@ -1354,13 +1354,13 @@ test("Settings shows compact global System Prompt summaries and an on-demand edi
   const freeVramStart = mainSource.indexOf("async function releaseComfyVram");
   const freeVramEnd = mainSource.indexOf("function showVramRetry", freeVramStart);
   const freeVramSource = mainSource.slice(freeVramStart, freeVramEnd);
-  assert.match(freeVramSource, /finally\s*\{[\s\S]*button\.disabled = false;[\s\S]*button\.innerHTML = `\$\{icon\("memory", 15\)\}Free ComfyUI VRAM`;/);
+  assert.match(freeVramSource, /finally\s*\{[\s\S]*button\.disabled = false;[\s\S]*button\.innerHTML = `\$\{icon\("memory", 15\)\}<span data-i18n="workspace\.free_comfy_vram">\$\{t\("workspace\.free_comfy_vram"\)\}<\/span>`;/);
   assert.match(freeVramSource, /requiredFreeMb/);
   assert.match(freeVramSource, /targetReached/);
   assert.doesNotMatch(freeVramSource, /if \(typeof retry === "function"\) \{\s*shouldRetry = true/);
-  assert.match(mainSource, /Unload Ollama/);
-  assert.match(mainSource, /Unload Direct/);
-  assert.match(mainSource, /Stop & unload/);
+  assert.match(mainSource, /msg\("lifecycle\.unload_ollama"\)/);
+  assert.match(mainSource, /msg\("lifecycle\.unload_direct"\)/);
+  assert.match(mainSource, /msg\("lifecycle\.stop_unload"\)/);
   assert.doesNotMatch(mainSource, /Stop request/);
   assert.match(mainSource, /Checking…/);
   assert.match(mainSource, /Ollama is not running/);
@@ -1425,7 +1425,7 @@ test("Settings owns a two-click restore for all mode draft defaults", () => {
   assert.match(mainSource, /FL2VA:[\s\S]{0,1400}<Picture 2>/);
   assert.match(mainSource, /L2VA:[\s\S]{0,1200}final composition established by <Picture 1>/);
   assert.match(mainSource, /saveCurrentModeDraft\(\)/);
-  assert.match(mainSource, /Click again to confirm/);
+  assert.match(mainSource, /t\("toast\.drafts\.confirm_label"\)/);
   assert.match(mainSource, /setTimeout\(disarmDraftDefaults, 5000\)/);
   assert.match(mainSource, /studio\.modeDrafts = \{\}/);
   assert.match(mainSource, /mode === "Reference"[\s\S]{0,120}REFERENCE_DEFAULT_BRIEF[\s\S]{0,80}SAMPLE_PROMPT/);
@@ -1514,12 +1514,12 @@ test("Music 3 drafts and payload keep lyrics separate from H3 state", () => {
   assert.ok(requestIndex >= 0 && lyricsAssignmentIndex > requestIndex);
   assert.match(mainSource, /studio\.lyricsRestore = \{ lyrics: currentLyrics \}[\s\S]{0,180}lyrics\.value = result\.prompt/);
   assert.doesNotMatch(mainSource.slice(requestIndex, lyricsAssignmentIndex + 500), /lyrics-refine-instruction[^\n]*\.value = ""/);
-  assert.match(mainSource, /restore\.textContent = currentLyrics\.trim\(\) \? "Restore previous" : "Remove generated"/);
+  assert.match(mainSource, /restore\.textContent = currentLyrics\.trim\(\) \? t\("toast\.lyrics\.restore_previous"\) : t\("toast\.lyrics\.remove_generated"\)/);
   assert.match(mainSource, /data-lyrics-refine-restore[\s\S]{0,700}const previousLyrics = studio\.lyricsRestore\.lyrics;[\s\S]{0,80}lyrics\.value = previousLyrics/);
 });
 
 test("active requests block add, reorder, and mode switching", () => {
-  assert.match(mainSource, /error\.code === "EXTERNAL_VISION_REQUIRED"[\s\S]{0,160}showToast\("Vision model required"/);
+  assert.match(mainSource, /error\.code === "EXTERNAL_VISION_REQUIRED"[\s\S]{0,160}showErrorToast\("toast\.generation\.vision_required\.title"/);
   assert.match(mainSource, /data-add-media \$\{studio\.requestBusy \? "disabled" : ""\}/);
   assert.match(mainSource, /const draggable = studio\.requestBusy \? "false" : "true"/);
   assert.match(mainSource, /dragstart[\s\S]{0,180}if \(studio\.requestBusy\)/);
@@ -1907,4 +1907,38 @@ test("duration label stays localized after a locale refresh", () => {
   const refreshEnd = mainSource.indexOf("onLocaleChange", refreshStart);
   assert.match(mainSource.slice(refreshStart, refreshEnd), /syncDurationLabel\(\);/);
   assert.equal(mainSource.match(/syncDurationLabel\(\);/g)?.length, 3);
+});
+
+test("error toasts keep a localized summary and the original English detail", () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  const start = mainSource.indexOf("function showErrorToast(");
+  const end = mainSource.indexOf("\nfunction ", start + 1);
+  assert.ok(start >= 0 && end > start, "showErrorToast must be a top-level function");
+  const calls = [];
+  const showErrorToast = new Function(
+    "showToast", "msg", "localizedError", "console",
+    `${mainSource.slice(start, end)};return showErrorToast;`,
+  )(
+    (...args) => calls.push(args),
+    msg,
+    localizedError,
+    { error() {} },
+  );
+  configureI18n({ preference: "zh-CN", root });
+  const timeout = Object.assign(new Error("ComfyUI aborted the request"), {
+    code: "REQUEST_TIMEOUT",
+    details: { timeout: 60000 },
+  });
+  showErrorToast("toast.generation.failed.title", timeout);
+  assert.deepEqual(calls[0][0], { key: "toast.generation.failed.title", params: {} });
+  assert.deepEqual(calls[0][1], { key: "errors.REQUEST_TIMEOUT", params: {} });
+  assert.match(calls[0][2], /ComfyUI aborted the request/);
+  assert.match(calls[0][2], /"timeout": 60000/);
+
+  const unknown = Object.assign(new Error("Backend exploded"), { code: "SOMETHING_NEW" });
+  showErrorToast("toast.generation.failed.title", unknown);
+  assert.deepEqual(calls[1][1], { key: "errors.UNKNOWN", params: {} });
+  assert.match(calls[1][2], /Backend exploded/);
+  configureI18n({ preference: "en", root });
 });

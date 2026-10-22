@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import test from "node:test";
+import { messageText, msg, t } from "../web/i18n.js";
 
 const source = await readFile(process.env.H3_WRITER_SOURCE || new URL("../web/main.js", import.meta.url), "utf8");
 
@@ -31,7 +32,7 @@ test("upload completion renders the current mode, including replacement", async 
     const api = controller(["uploadFiles"], {
       studio, uploadMedia: () => pending.promise,
       acceptMediaAssets: assets => { studio.assets = assets; },
-      showToast() {}, hideToast() {}, audioWasAdded: () => false,
+      showToast() {}, hideToast() {}, audioWasAdded: () => false, msg,
       renderMedia: (mode) => renders.push(mode),
     });
     const operation = api.uploadFiles("Reference", [{}], replacement);
@@ -52,7 +53,7 @@ test("Clear everything does not clear another mode or newer input", async () => 
       studio, currentDraftFields: () => ({ ...fields }),
       clearCurrentMedia: () => pending.promise,
       clearCurrentPrompts: () => { fields = { brief: "", prompt: "" }; },
-      showToast() {},
+      showToast() {}, msg,
     });
     const operation = api.clearEverything();
     if (changeMode) studio.mode = "I2VA";
@@ -90,7 +91,7 @@ function refinementController(lyricsMode, pending) {
     currentBriefTextarea: () => generic, newGenerationSeed: () => 1,
     renderPromptHighlights() {}, formatGenerationMeta: () => "", syncRuntimeSummary() {},
     syncModifiedState() {}, saveCurrentModeDraft() {}, showToast() {}, updateMusicLyricsCount() {},
-    icon: () => "", getStatus: async () => ({}), updatePromptResidency() {},
+    icon: () => "", getStatus: async () => ({}), updatePromptResidency() {}, msg, t, messageText, showErrorToast() {},
   });
   return { api, output, instruction, started: started.promise };
 }
