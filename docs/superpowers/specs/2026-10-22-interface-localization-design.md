@@ -1,7 +1,7 @@
 # H3 Prompt Writer 中英文界面切换设计
 
 - 日期：2026-10-22
-- 状态：待审阅
+- 状态：已审阅，按计划实施
 - 范围：Writer 界面文案与常见错误提示
 
 ## 1. 背景
@@ -55,16 +55,22 @@ H3 Prompt Writer 的所有界面文案目前是硬编码英文，没有 i18n 基
 ### 4.2 公共 API
 
 ```js
-configureI18n({ preference, app, navigatorLanguage, root })
+configureI18n({ preference, app, navigatorLanguage, root })  // 初始化；不通知监听器
 getLanguagePreference()        // "auto" | "en" | "zh-CN"
 getLocale()                    // "en" | "zh-CN"
 setLanguagePreference(value)   // 解析、更新状态、设置 document 语言、translateDom(root)、通知监听器
 t(key, params = {})            // 取当前语言文案，替换 {name} 占位符
 translateDom(root)             // 翻译带 data-i18n* 标记的子树
 onLocaleChange(listener)       // 返回取消订阅函数
+msg(key, params = {})          // 生成 { key, params } 描述符，供需要跨切换重绘的位置保存
+messageText(value)             // 描述符 → 当前语言字符串；普通字符串原样返回
+localizedError(error, fallbackKey = "errors.UNKNOWN", params = {})
+                               // 返回 { code, key, message, technical }
 ```
 
 `configureI18n` 在 `createStudio()` 生成首屏 markup 之前调用，参数来自 `loadUserPreferences(localStorage)?.language || "auto"`。
+
+> `msg()` 只用于切换语言后仍要重绘的文案（toast、状态栏、浮动媒体面板状态）。一次性渲染且不会在切换后复用的文案直接调用 `t()`，不要保存描述符。
 
 ### 4.3 语言解析
 
@@ -164,13 +170,15 @@ onLocaleChange(listener)       // 返回取消订阅函数
 
 ### 7.2 toast 与状态栏
 
-- `showToast` 改为接收 key 描述符：
+- `showToast` 保持位置参数签名，避免改动全部调用点：
   ```js
-  showToast({ titleKey, messageKey, params, details, action, options })
+  showToast(title, message, details = null, action = null, options = {})
   ```
-  内部用 `t()` 生成显示文本，并把描述符保存在当前 toast 状态中。
-- 状态栏 `setGenerationState(state, labelKey, detailKey, params)` 同样保存描述符。
-- 语言切换时按保存的描述符重新生成 toast 与状态栏文本；`details` 是英文技术细节（由 `localizedError().technical` 得到），原样保留、不参与翻译。
+- `title`、`message`、`action.label` 接受字符串或 `msg(key, params)` 描述符。字符串在调用时求值，描述符保留到语言切换后再用 `messageText()` 渲染。
+- `showToast` 内部把 `title`、`message`、`action.label` 的原始值保存到 `studio.toastSnapshot`；`writeToastContent` 负责按当前语言写入 DOM。
+- 状态栏 `setGenerationState(state, label, detail)` 同样接受字符串或描述符，并保存 `generationSnapshot`；`writeStatusContent` 按当前语言重绘。
+- 语言切换时由 `web/main.js` 的 `onLocaleChange` 监听器重绘当前 toast 与状态栏。
+- `details` 是英文技术细节（由 `localizedError().technical` 得到），原样保留、不参与翻译。
 - 若某条消息包含后端动态文本，只把动态值放进 `params` 或 `details`，不把整句英文塞进 key。
 
 ### 7.3 输入保护
@@ -190,13 +198,13 @@ onLocaleChange(listener)       // 返回取消订阅函数
 新增：
 
 ```js
-localizedError(error, fallbackKey = "errors.UNKNOWN")
-// 返回 { message, technical }
+localizedError(error, fallbackKey = "errors.UNKNOWN", params = {})
+// 返回 { code, key, message, technical }
 ```
-
-- `error.code` 命中字典 `errors.<CODE>`：`message` 为该文案。
-- 未命中：`message = t("errors.UNKNOWN")`。
-- `technical` 始终为原始英文：`error.message`；存在 `error.details` 时追加格式化 JSON。
+- `code`：`error.code`（无则空串），用于排查与日志，不用于显示。
+- `key`：实际命中的字典 key（`errors.<CODE>` 或 `fallbackKey`）。
+- `message`：当前语言摘要。
+- `technical`：原英文 `error.message`；存在 `error.details` 时追加格式化 JSON。
 - 所有 toast 捕获错误的地方改用 `localizedError`，把 `message` 作为摘要，把 `technical` 放入“技术细节”。
 
 ### 8.3 前端本地错误码
@@ -236,7 +244,7 @@ localizedError(error, fallbackKey = "errors.UNKNOWN")
 ### 9.2 修改
 
 - `web/main.js`：语言下拉、初始化、动态刷新注册、全部文案、toast/状态描述符。
-- `web/settings.js`、`web/writer_controls.js`、`web/sequence_workspace.js`、`web/media_composer.js`、`web/media_editor.js`、`web/floating_media.js`、`web/draft_files.js`：文案改用 `t()` 或 `data-i18n*`。
+- `web/settings.js`、`web/writer_controls.js`、`web/sequence_workspace.js`、`web/sequence_controller.js`、`web/media_composer.js`、`web/media_editor.js`、`web/floating_media.js`、`web/draft_files.js`：文案改用 `t()` 或 `data-i18n*`。
 - `web/vram_handoff.js`：`AUTO_VRAM_TOOLTIP` 改为可翻译 key，错误码文案由 `localizedError` 统一处理。
 - `web/api/h3studio.js`、`web/api/sequence.js`、`web/api/response.js`：本地错误补稳定错误码。
 - `web/studio_state.js`：偏好新增 `language` 字段。
@@ -302,3 +310,10 @@ Ollama 模型名、API provider 模型名、后端返回的技术细节保持英
 ### 11.5 生成进行中切换
 
 切换只改变显示层，不中断请求，不改变最终生成结果。
+
+### 11.6 已知限制
+
+1. **生成耗时后缀**：`.h3ps-editor-meta` 的耗时信息由 `formatGenerationMeta` 在生成完成时写入；`syncOutputLengthMeta` 在语言切换时只重算长度前缀，耗时后缀保持上一次生成时的语言，直到下一次生成。切换瞬间该行可能中英混排。
+2. **前端校验消息的位置**：`sequence_workspace` / `sequence_controller` 生成的前端校验与引导消息经 `t()` 本地化后，会出现在错误 toast 的“技术细节”行，因此该行可能同时包含中文引导和英文后端原文。后端原始 `message` / `details` 始终保留英文。
+3. **一次性提示**：媒体工具通过 `notify()` 弹出的 toast 在触发时已求值，切换语言不会追溯改写已经显示的那一条；下一次触发使用新语言。生成完成提示的 message 由多个描述符在调用时拼接成字符串，同样不会追溯重译。`media.float` 收到的原始失败文本（`error.message`）保持原样，直到下一次通知。
+4. **已关闭的历史 toast**：只有当前可见的 toast 与状态栏会随语言切换重绘；已经关闭的消息不再重建。
