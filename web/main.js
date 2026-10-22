@@ -11,6 +11,21 @@ import { selectProjector, cancel, clearMedia, diagnoseGGUFRuntime, disconnectApi
 import { comfyVramIsAlreadyEmpty, createSessionId, fileCountFromDataTransfer, insertReferenceAtCaret, isChoiceMenuInteraction, isGuideMenuInteraction, isRuntimeMenuInteraction, moveOntoTarget, replacementTargetForFileDrop, replaceEventListener, vramReleaseReachedTarget } from "./compat.js";
 import { generateModelSummaryMarkup, settingsMarkup } from "./settings.js";
 import {
+  configureI18n,
+  getLanguagePreference,
+  getLocale,
+  messageText,
+  msg,
+  normalizeLanguagePreference,
+  onLocaleChange,
+  setLanguagePreference,
+  t,
+  translateDom,
+  localizedError,
+} from "./i18n.js";
+import { writeToastContent } from "./toast.js";
+import { writeStatusContent } from "./status.js";
+import {
   buildGeneratePayload,
   buildLyricsRefinePayload,
   buildRefinePayload,
@@ -3095,6 +3110,12 @@ function setFullscreen(fullscreen) {
 function createStudio() {
   if (studio) return studio;
   injectStyles();
+  const initialPreferences = loadUserPreferences(localStorage);
+  configureI18n({
+    preference: initialPreferences?.language || "auto",
+    app,
+    navigatorLanguage: globalThis.navigator?.language || "",
+  });
   const studioBrandIcon = new URL("./assets/h3-prompt-writer-launcher.svg", import.meta.url).href;
   const root = document.createElement("div");
   root.className = "h3ps-root";
@@ -3118,6 +3139,13 @@ function createStudio() {
           </div>
           <button class="h3ps-guide-button" type="button" data-open-settings-header>Settings</button>
           ${supportsWorkflowMedia() ? `<button class="h3ps-icon-button" type="button" data-open-floating-media title="Media panel" aria-label="Media panel">${icon("grid", 17)}</button>` : ""}
+          <select class="h3ps-language-select" data-language
+            title="${t("common.language")}" aria-label="${t("common.language")}"
+            data-i18n-title="common.language" data-i18n-aria-label="common.language">
+            <option value="auto">Auto</option>
+            <option value="en">English</option>
+            <option value="zh-CN">简体中文</option>
+          </select>
           <button class="h3ps-icon-button" type="button" title="Switch to light theme" aria-label="Switch to light theme" aria-pressed="false" data-theme-toggle>${icon("sun", 17)}</button>
           <div class="h3ps-interface-size-picker" data-interface-size-picker>
             <button class="h3ps-icon-button h3ps-interface-size-button" type="button" title="Interface size 100%" aria-label="Interface size 100%" aria-haspopup="true" aria-expanded="false" data-interface-size-toggle>Aa</button>
@@ -3289,8 +3317,15 @@ function createStudio() {
 
     <div class="h3ps-toast" role="status" aria-live="polite" aria-atomic="true" data-h3ps-toast><span class="h3ps-toast-icon">${icon("info", 17)}</span><span><strong data-toast-title>Notice</strong><span data-toast-message></span><button type="button" class="h3ps-toast-action" data-toast-action hidden></button><details data-toast-details hidden><summary>Technical details</summary><pre></pre></details></span></div>`;
   document.body.appendChild(root);
-
+  configureI18n({
+    preference: initialPreferences?.language || "auto",
+    app,
+    navigatorLanguage: globalThis.navigator?.language || "",
+    root,
+  });
+  translateDom(root);
   studio = { root, ...createStudioState({ sessionId: createSessionId(), storage: localStorage }) };
+  root.querySelector("[data-language]").value = getLanguagePreference();
   root.querySelector("[data-comfy-memory-action]").hidden = !HOST_CAPABILITIES.comfyMemory;
   if (!HOST_CAPABILITIES.windowed) {
     studio.fullscreen = true;
@@ -3356,6 +3391,14 @@ function createStudio() {
   syncFullscreenState();
   root.querySelectorAll("[data-close-studio]").forEach((el) => el.addEventListener("click", closeStudio));
   root.querySelector("[data-fullscreen-toggle]").addEventListener("click", () => setFullscreen(!studio.fullscreen));
+  root.querySelector("[data-language]").addEventListener("change", (event) => {
+    const language = normalizeLanguagePreference(event.target.value);
+    studio.language = language;
+    studio.languageChosen = true;
+    setLanguagePreference(event.target.value);
+    saveUserPreferences(localStorage, studio);
+    console.log(`[H3 Writer i18n] preference=${language} locale=${getLocale()}`);
+  });
   root.querySelector("[data-theme-toggle]").addEventListener("click", () => setTheme(studio.theme === "light" ? "dark" : "light"));
   root.querySelectorAll("[data-open-floating-media]").forEach(button => button.addEventListener("click", openFloatingMedia));
   root.querySelector("[data-open-composer]").addEventListener("click", (event) => openMediaComposer(event.currentTarget));

@@ -1398,6 +1398,14 @@ test("Settings shows compact global System Prompt summaries and an on-demand edi
   assert.match(mainSource, /refine\(buildRefinePayload\(studio/);
 });
 
+test("the shell exposes a language selector wired to the i18n preference", () => {
+  assert.match(mainSource, /class="h3ps-language-select" data-language/);
+  assert.match(mainSource, /data-i18n-title="common\.language"/);
+  assert.match(mainSource, /setLanguagePreference\(event\.target\.value\)/);
+  assert.match(mainSource, /studio\.languageChosen = true/);
+  assert.match(mainSource, /saveUserPreferences\(localStorage, studio\)/);
+});
+
 test("Settings owns a two-click restore for all mode draft defaults", () => {
   const markup = settingsMarkup(() => "<svg></svg>");
   assert.match(markup, /data-restore-default-drafts/);
