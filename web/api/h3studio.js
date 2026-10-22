@@ -1,10 +1,15 @@
 import { api } from "/scripts/api.js";
-import { readApiResponse } from "./response.js";
+import { networkError, readApiResponse } from "./response.js";
 
 const PREFIX = "/h3studio";
 
 async function request(path, options) {
-  const response = await api.fetchApi(`${PREFIX}${path}`, options);
+  let response;
+  try {
+    response = await api.fetchApi(`${PREFIX}${path}`, options);
+  } catch (error) {
+    throw networkError(error);
+  }
   return readApiResponse(response);
 }
 
@@ -43,13 +48,20 @@ export const unloadModel = (target = {}) => post("/unload", target);
 export const refine = (payload) => post("/refine", payload, noFetchTimeout);
 
 export async function freeComfyVram() {
-  const response = await api.fetchApi("/free", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ unload_models: true, free_memory: false }),
-  });
+  let response;
+  try {
+    response = await api.fetchApi("/free", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unload_models: true, free_memory: false }),
+    });
+  } catch (error) {
+    throw networkError(error);
+  }
   if (!response.ok) {
-    throw new Error(`ComfyUI memory release failed (${response.status})`);
+    const error = new Error(`ComfyUI memory release failed (${response.status})`);
+    error.code = "REQUEST_FAILED";
+    throw error;
   }
 }
 
@@ -64,9 +76,14 @@ export function uploadMedia(sessionId, mode, files, replaceAssetId = null) {
 
 export const listMedia = (sessionId) => request(`/media?session_id=${encodeURIComponent(sessionId)}`);
 export async function editMedia(sessionId, assetId, options) {
-  const response = await api.fetchApi(`${PREFIX}/media/${encodeURIComponent(assetId)}/edit`, {
-    method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({session_id:sessionId,...options}),
-  });
+  let response;
+  try {
+    response = await api.fetchApi(`${PREFIX}/media/${encodeURIComponent(assetId)}/edit`, {
+      method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({session_id:sessionId,...options}),
+    });
+  } catch (error) {
+    throw networkError(error);
+  }
   if (["download", "audio"].includes(options.action) && response.ok) return response.blob();
   return readApiResponse(response);
 }

@@ -6,6 +6,13 @@ function fallbackMessage(response, invalidSuccess = false) {
   return `H3 Prompt Writer request failed${status}. The server returned a non-JSON response.`;
 }
 
+export function networkError(error) {
+  const wrapped = new Error(error?.message || "Network request failed");
+  wrapped.code = error?.name === "TimeoutError" ? "REQUEST_TIMEOUT" : "NETWORK_ERROR";
+  wrapped.cause = error;
+  return wrapped;
+}
+
 export async function readApiResponse(response) {
   const text = await response.text();
   let payload = null;
@@ -19,12 +26,14 @@ export async function readApiResponse(response) {
 
   if (!response.ok) {
     const error = new Error(payload?.error?.message || fallbackMessage(response));
-    error.code = payload?.error?.code;
+    error.code = payload?.error?.code || "REQUEST_FAILED";
     error.details = payload?.error?.details;
     throw error;
   }
   if (payload === null) {
-    throw new Error(fallbackMessage(response, true));
+    const error = new Error(fallbackMessage(response, true));
+    error.code = "INVALID_RESPONSE";
+    throw error;
   }
   return payload;
 }

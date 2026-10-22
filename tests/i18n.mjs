@@ -21,6 +21,7 @@ import {
 } from "../web/i18n.js";
 import { messages as en } from "../web/locales/en.js";
 import { messages as zhCN } from "../web/locales/zh-CN.js";
+import { networkError, readApiResponse } from "../web/api/response.js";
 import { createStudioState, loadUserPreferences, saveUserPreferences } from "../web/studio_state.js";
 
 const window = new Window();
@@ -180,4 +181,14 @@ test("legacy users keep auto behavior without writing language until they switch
   assert.equal(Object.hasOwn(JSON.parse(data.get("h3ps-preferences-v1")), "language"), false);
   saveUserPreferences(storage, { ...state, language: "zh-CN", languageChosen: true });
   assert.equal(JSON.parse(data.get("h3ps-preferences-v1")).language, "zh-CN");
+});
+
+test("network failures map to stable error codes", async () => {
+  const timeout = Object.assign(new Error("aborted"), { name: "TimeoutError" });
+  assert.equal(networkError(timeout).code, "REQUEST_TIMEOUT");
+  assert.equal(networkError(new Error("offline")).code, "NETWORK_ERROR");
+  const failed = { ok: false, status: 502, text: async () => "<html>bad gateway</html>" };
+  await assert.rejects(readApiResponse(failed), (error) => error.code === "REQUEST_FAILED");
+  const invalid = { ok: true, status: 200, text: async () => "not json" };
+  await assert.rejects(readApiResponse(invalid), (error) => error.code === "INVALID_RESPONSE");
 });
