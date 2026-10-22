@@ -526,8 +526,8 @@ function renderMedia(mode) {
     media.innerHTML = `
       <div class="h3ps-empty-drop is-static">
         <span class="h3ps-empty-icon">${icon("spark", 20)}</span>
-        <strong data-i18n="media.empty_t2va_title">Start from a text description</strong>
-        <small data-i18n="media.empty_t2va_hint">T2VA does not use reference media</small>
+        <strong data-i18n="media.empty_t2va_title">${t("media.empty_t2va_title")}</strong>
+        <small data-i18n="media.empty_t2va_hint">${t("media.empty_t2va_hint")}</small>
       </div>`;
   } else {
     const isReference = mode === "Reference";
@@ -536,10 +536,10 @@ function renderMedia(mode) {
     const counts = assets.reduce((result, asset) => ({ ...result, [asset.type]: (result[asset.type] || 0) + 1 }), {});
     const filters = isReference ? `
       <div class="h3ps-media-filters" aria-label="${t("media.reference_type")}" data-i18n-aria-label="media.reference_type">
-        <button type="button" data-media-filter="all" class="${filter === "all" ? "is-active" : ""}"><span data-i18n="media.filter_all">All</span> <b>${assets.length}/12</b></button>
-        <button type="button" data-media-filter="image" class="${filter === "image" ? "is-active" : ""}">${icon("image", 13)} <span data-i18n="media.filter_images">Images</span> <b>${counts.image || 0}/9</b></button>
-        <button type="button" data-media-filter="video" class="${filter === "video" ? "is-active" : ""}">${icon("video", 13)} <span data-i18n="media.filter_video">Video</span> <b>${counts.video || 0}/3</b></button>
-        <button type="button" data-media-filter="audio" class="${filter === "audio" ? "is-active" : ""}">${icon("audio", 13)} <span data-i18n="media.filter_audio">Audio</span> <b>${counts.audio || 0}/3</b></button>
+        <button type="button" data-media-filter="all" class="${filter === "all" ? "is-active" : ""}"><span data-i18n="media.filter_all">${t("media.filter_all")}</span> <b>${assets.length}/12</b></button>
+        <button type="button" data-media-filter="image" class="${filter === "image" ? "is-active" : ""}">${icon("image", 13)} <span data-i18n="media.filter_images">${t("media.filter_images")}</span> <b>${counts.image || 0}/9</b></button>
+        <button type="button" data-media-filter="video" class="${filter === "video" ? "is-active" : ""}">${icon("video", 13)} <span data-i18n="media.filter_video">${t("media.filter_video")}</span> <b>${counts.video || 0}/3</b></button>
+        <button type="button" data-media-filter="audio" class="${filter === "audio" ? "is-active" : ""}">${icon("audio", 13)} <span data-i18n="media.filter_audio">${t("media.filter_audio")}</span> <b>${counts.audio || 0}/3</b></button>
       </div>` : "";
     const addLabelKey = !isReference || filter === "image"
       ? "media.add_image"
@@ -548,7 +548,7 @@ function renderMedia(mode) {
     media.innerHTML = `
       ${filters}
       <div class="h3ps-assets ${isReference ? "is-reference" : ""}">${visibleAssets.map((asset) => renderAsset(asset, assets.indexOf(asset))).join("")}
-        ${canAdd ? `<button class="${assets.length ? "h3ps-add-asset" : "h3ps-empty-drop"}" type="button" data-add-media ${studio.requestBusy ? "disabled" : ""}>${icon("plus", 18)}<span data-i18n="${addLabelKey}">${t(addLabelKey)}</span><small data-i18n="media.drop_files">Drop files here</small></button>` : ""}
+        ${canAdd ? `<button class="${assets.length ? "h3ps-add-asset" : "h3ps-empty-drop"}" type="button" data-add-media ${studio.requestBusy ? "disabled" : ""}>${icon("plus", 18)}<span data-i18n="${addLabelKey}">${t(addLabelKey)}</span><small data-i18n="media.drop_files">${t("media.drop_files")}</small></button>` : ""}
       </div>`;
   }
   notifyMediaCompatibility();

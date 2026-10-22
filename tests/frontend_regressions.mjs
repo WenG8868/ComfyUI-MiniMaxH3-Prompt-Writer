@@ -913,6 +913,16 @@ test("Reference assets replace one dropped file and append multiple dropped file
   assert.equal(replacementTargetForFileDrop("asset-2", 2), null);
 });
 
+test("media panel templates translate inline so labels are localized on first render", () => {
+  assert.match(mainSource, /<strong data-i18n="media\.empty_t2va_title">\$\{t\("media\.empty_t2va_title"\)\}<\/strong>/);
+  assert.match(mainSource, /<small data-i18n="media\.empty_t2va_hint">\$\{t\("media\.empty_t2va_hint"\)\}<\/small>/);
+  assert.match(mainSource, /<span data-i18n="media\.filter_all">\$\{t\("media\.filter_all"\)\}<\/span>/);
+  assert.match(mainSource, /<span data-i18n="media\.filter_images">\$\{t\("media\.filter_images"\)\}<\/span>/);
+  assert.match(mainSource, /<span data-i18n="media\.filter_video">\$\{t\("media\.filter_video"\)\}<\/span>/);
+  assert.match(mainSource, /<span data-i18n="media\.filter_audio">\$\{t\("media\.filter_audio"\)\}<\/span>/);
+  assert.match(mainSource, /<small data-i18n="media\.drop_files">\$\{t\("media\.drop_files"\)\}<\/small>/);
+});
+
 test("media card overlays stay inside the thumbnail and below previews", () => {
   assert.match(stylesSource, /\.h3ps-duration\s*\{[^}]*position:\s*absolute;[^}]*right:\s*7px;[^}]*bottom:\s*49px;/);
   assert.match(stylesSource, /\.h3ps-replace-asset, \.h3ps-remove-asset \{[^}]*width:\s*22px;[^}]*height:\s*22px;/);
