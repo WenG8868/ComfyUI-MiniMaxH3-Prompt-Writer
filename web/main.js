@@ -3059,6 +3059,12 @@ function syncTheme() {
   button.setAttribute("aria-pressed", String(light));
 }
 
+function syncDurationLabel() {
+  if (!studio) return;
+  const label = studio.root.querySelector("[data-duration-label]");
+  if (label) label.textContent = t("workspace.duration_seconds", { seconds: studio.durationSeconds });
+}
+
 function setTheme(theme) {
   if (!studio) return;
   studio.theme = theme === "light" ? "light" : "dark";
@@ -3388,7 +3394,7 @@ function createStudio() {
   const durationSlider = root.querySelector("[data-duration-slider]");
   durationSlider.value = String(studio.durationSeconds);
   durationSlider.style.setProperty("--h3ps-range", `${(studio.durationSeconds - 1) / 19 * 100}%`);
-  root.querySelector("[data-duration-label]").textContent = t("workspace.duration_seconds", { seconds: studio.durationSeconds });
+  syncDurationLabel();
   studio.aspectControl = bindAspectRatio(root.querySelector('[data-choice-toggle="aspect"]').closest(".h3ps-choice"), studio.aspectRatio, value => {
     studio.aspectRatio = value;
     saveUserPreferences(localStorage, studio);
@@ -3529,7 +3535,7 @@ function createStudio() {
 
   root.querySelector("[data-duration-slider]").addEventListener("input", (event) => {
     studio.durationSeconds = Number(event.target.value);
-    root.querySelector("[data-duration-label]").textContent = t("workspace.duration_seconds", { seconds: studio.durationSeconds });
+    syncDurationLabel();
     event.target.style.setProperty("--h3ps-range", `${(studio.durationSeconds - 1) / 19 * 100}%`);
     saveUserPreferences(localStorage, studio);
   });
@@ -3883,6 +3889,7 @@ function createStudio() {
       syncTheme();
       syncFullscreenState();
       syncInterfaceSize();
+      syncDurationLabel();
       syncWorkspace();
       syncModeAvailability();
       syncSelectedModelSourceLabel();

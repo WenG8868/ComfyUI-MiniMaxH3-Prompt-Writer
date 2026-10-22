@@ -1874,3 +1874,37 @@ test("generation metadata and shared labels follow the active locale", () => {
   assert.match(mainSource, /t\("workspace\.generated_caption"\)/);
   configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
 });
+
+test("duration label stays localized after a locale refresh", () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  const label = window.document.createElement("b");
+  label.dataset.durationLabel = "";
+  root.append(label);
+  window.document.body.append(root);
+  const studio = { root, durationSeconds: 7 };
+  const start = mainSource.indexOf("function syncDurationLabel(");
+  const end = mainSource.indexOf("\nfunction ", start + 1);
+  const syncDurationLabel = new Function(
+    "studio",
+    "t",
+    `${mainSource.slice(start, end)};return syncDurationLabel;`,
+  )(studio, t);
+
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  syncDurationLabel();
+  assert.equal(label.textContent, "7 seconds");
+
+  configureI18n({ preference: "zh-CN", root });
+  syncDurationLabel();
+  assert.equal(label.textContent, "7 秒");
+
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  syncDurationLabel();
+  assert.equal(label.textContent, "7 seconds");
+
+  const refreshStart = mainSource.indexOf("const refreshLocalizedUi =");
+  const refreshEnd = mainSource.indexOf("onLocaleChange", refreshStart);
+  assert.match(mainSource.slice(refreshStart, refreshEnd), /syncDurationLabel\(\);/);
+  assert.equal(mainSource.match(/syncDurationLabel\(\);/g)?.length, 3);
+});
