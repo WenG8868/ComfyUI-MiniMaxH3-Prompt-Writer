@@ -413,6 +413,7 @@ function icon(name, size = 16) {
     grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
     download: '<path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/>',
     crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2"/>',
+    chat: '<path d="M20 12a8 8 0 0 1-8 8H4l2-3.2A8 8 0 1 1 20 12Z"/><path d="M8 11h8m-8 3h5"/>',
   };
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" style="--h3ps-icon-size:${size}px" aria-hidden="true">${paths[name] || paths.info}</svg>`;
 }
@@ -1079,13 +1080,17 @@ function syncGenerateLabel() {
 
 function syncWorkspace() {
   if (!studio) return;
-  const music = studio.mode === "Music3";
+  const chat = Boolean(studio.chatOpen);
+  const music = !chat && studio.mode === "Music3";
+  studio.root.classList.toggle("is-chat", chat);
   studio.root.classList.toggle("is-music", music);
   studio.root.querySelectorAll("[data-workspace]").forEach((button) => {
-    const selected = button.dataset.workspace === (music ? "music" : "video");
+    const selected = button.dataset.workspace === (chat ? "chat" : music ? "music" : "video");
     button.classList.toggle("is-active", selected);
     button.setAttribute("aria-pressed", String(selected));
   });
+  const chatView = studio.root.querySelector("[data-chat-view]");
+  if (chatView) chatView.hidden = !chat || studio.root.classList.contains("is-settings-open");
   studio.root.querySelector("[data-video-modes]").hidden = music;
   studio.root.querySelector("[data-video-inputs]").hidden = music;
   studio.root.querySelector("[data-music-inputs]").hidden = !music;
@@ -1126,9 +1131,10 @@ function syncModeAvailability() {
       : "";
   });
   studio.root.querySelectorAll("[data-workspace]").forEach((control) => {
-    control.disabled = studio.requestBusy;
+    const chatTab = control.dataset.workspace === "chat";
+    control.disabled = !chatTab && studio.requestBusy;
     control.setAttribute("aria-disabled", String(control.disabled));
-    control.title = "";
+    if (!chatTab) control.title = "";
   });
 }
 
@@ -1243,7 +1249,7 @@ function vramHandoffIsEnabled() {
   if (!VRAM_HANDOFF_SUPPORTED) return false;
   if (studio) return studio.vramHandoff;
   const preferences = loadUserPreferences(localStorage);
-  return preferences?.vram_handoff === true;
+  return preferences?.vram_handoff !== false;
 }
 
 function vramHandoffOllamaHost() {
@@ -1289,7 +1295,10 @@ async function prepareWriterRequest() {
   const token = writerAutoVramApplies() ? vramHandoffCoordinator.beginWriterAttempt() : null;
   if (!await inspectDirectRuntime() || !writerAttemptIsCurrent(token)) return false;
   if (!await prepareWriterVram(token)) return false;
-  if (writerAttemptIsCurrent(token)) return true;
+  if (writerAttemptIsCurrent(token)) {
+    warnUnmeasuredVram(studio.selectedModel);
+    return true;
+  }
   setGenerationState("idle", "", "");
   return false;
 }
@@ -1464,6 +1473,17 @@ function showVramRetry(error, retry) {
     ? null
     : { label: msg("toast.vram.retry.action"), onClick: () => releaseComfyVram({ retry, requiredFreeMb: error.details?.required_free_mb }) };
   showToast(msg("toast.vram.retry.title"), message, null, action);
+}
+
+function warnUnmeasuredVram(model) {
+  if (!model || model.family !== "gguf" || model.estimated_free_vram_mb) return;
+  if (studio.vramEstimateWarnedModel === model.id) return;
+  studio.vramEstimateWarnedModel = model.id;
+  const freeMb = Number(studio.gpuMemory?.free_mb);
+  const message = Number.isFinite(freeMb)
+    ? msg("toast.vram.unmeasured.message", { free: (freeMb / 1024).toFixed(1) })
+    : msg("toast.vram.unmeasured.unknown_free");
+  showToast(msg("toast.vram.unmeasured.title"), message, null, null, { dismissOnWorkspaceClick: true });
 }
 
 async function runLifecycleAction(event) {
@@ -1770,21 +1790,21 @@ function localRuntimeLabel() {
   return `${base}${diagnostics.backend ? ` · ${diagnostics.backend}` : ""}`;
 }
 
+function selectedModelCategoryLabel(model) {
+  if (model?.family === "gguf") return t("settings.direct");
+  if (model?.family === "external") return t("settings.external");
+  if (model?.family === "ollama") return t("settings.ollama");
+  if (model?.family === "api") return t("models.api_provider", { preset: model.api_preset });
+  return t("models.no_model");
+}
+
 function syncSelectedModelSourceLabel() {
   if (!studio) return;
   const localModel = studio.selectedModel?.family === "gguf"
     ? studio.selectedModel
     : studio.models.find((model) => model.family === "gguf" && model.runtime_ready) || studio.models.find((model) => model.family === "gguf");
   studio.root.querySelector("[data-model-source-label]").textContent = localModel ? localRuntimeLabel() : t("models.no_direct_model");
-  studio.root.querySelector("[data-active-model-source]").textContent = studio.selectedModel?.family === "external"
-    ? t("models.external_server")
-    : studio.selectedModel?.family === "ollama"
-      ? t("models.ollama_local")
-      : studio.selectedModel?.family === "api"
-        ? t("models.api_provider", { preset: studio.selectedModel.api_preset })
-      : studio.selectedModel
-        ? localRuntimeLabel()
-        : t("models.no_model");
+  studio.root.querySelector("[data-active-model-source]").textContent = selectedModelCategoryLabel(studio.selectedModel);
 }
 
 function syncActiveModelSummary(runtimeSummary = null) {
@@ -1801,13 +1821,7 @@ function syncActiveModelSummary(runtimeSummary = null) {
   modelIcon.textContent = "";
   modelIcon.dataset.providerIcon = providerIcon;
   studio.root.querySelector("[data-active-model-name]").textContent = model ? model.name.split("/").pop() : t("models.no_prompt_model");
-  studio.root.querySelector("[data-active-model-source]").textContent = model?.family === "external"
-    ? t("models.external_server")
-    : model?.family === "ollama"
-      ? t("models.ollama_local")
-      : model?.family === "api"
-        ? t("models.api_provider", { preset: model.api_preset })
-      : model ? localRuntimeLabel() : t("models.open_settings");
+  studio.root.querySelector("[data-active-model-source]").textContent = selectedModelCategoryLabel(model);
   if (runtimeSummary != null) studio.root.querySelector("[data-active-runtime-summary]").textContent = runtimeSummary;
 }
 
@@ -1871,7 +1885,7 @@ function renderExternalServerControl() {
       <div class="h3ps-external-connection-status">
         <span class="h3ps-provider-icon" data-provider-icon="external" aria-hidden="true"></span>
         <span><strong${connected ? "" : ' data-i18n="providers.external.title"'}>${escapeHtml(title)}</strong><small data-provider-dynamic="external-state">${escapeHtml(state)}</small></span>
-        <em data-i18n="${statusKey}">${t(statusKey)}</em>
+        <em data-external-server-status data-i18n="${statusKey}">${t(statusKey)}</em>
       </div>
       <form data-external-server-form>
         <label><span data-i18n="providers.external.url">${t("providers.external.url")}</span><input name="url" type="url" value="${escapeHtml(config.url)}" placeholder="http://127.0.0.1:8080" required></label>
@@ -2019,6 +2033,12 @@ function apiProviderModelForSettings() {
     || null;
 }
 
+function renderApiProviderError() {
+  const error = studio.apiProviderError;
+  if (!error) return "";
+  return `<div class="h3ps-api-error"><strong ${error.code ? "" : 'data-provider-dynamic="api-error-code"'}>${escapeHtml(error.code || t("providers.api.connection_failed"))}</strong><span>${escapeHtml(error.message)}</span></div>`;
+}
+
 function renderApiProviderControl() {
   const config = studio.apiProviderConfig;
   const selectedPreset = API_PROVIDER_UI[config.preset] || API_PROVIDER_UI.gemini;
@@ -2062,7 +2082,7 @@ function renderApiProviderControl() {
       <label><span><span data-i18n="providers.api.model_id">${t("providers.api.model_id")}</span> <em data-i18n="providers.api.optional_before_connect">${t("providers.api.optional_before_connect")}</em></span><input name="model_id" type="text" value="${escapeHtml(config.model_id)}" placeholder="${escapeHtml(t("providers.api.model_placeholder"))}" data-i18n-placeholder="providers.api.model_placeholder" spellcheck="false"></label>
       ${config.preset === "gemini" ? `<label><span data-i18n="providers.api.thinking_level">${t("providers.api.thinking_level")}</span><select name="gemini_reasoning_effort"><option value="minimal" ${config.gemini_reasoning_effort === "minimal" ? "selected" : ""} data-i18n="providers.api.thinking_minimal">${t("providers.api.thinking_minimal")}</option><option value="low" ${config.gemini_reasoning_effort === "low" ? "selected" : ""} data-i18n="runtime.reasoning.low">${reasoningLabel("low")}</option><option value="medium" ${config.gemini_reasoning_effort === "medium" ? "selected" : ""} data-i18n="runtime.reasoning.medium">${reasoningLabel("medium")}</option><option value="high" ${config.gemini_reasoning_effort === "high" ? "selected" : ""} data-i18n="runtime.reasoning.high">${reasoningLabel("high")}</option></select><small data-i18n="providers.api.thinking_hint">${t("providers.api.thinking_hint")}</small></label>` : ""}
       ${config.preset === "custom" ? `<div class="h3ps-api-custom-options"><label><input name="custom_images" type="checkbox" ${config.custom_images ? "checked" : ""}><span data-i18n="providers.api.images_option">${t("providers.api.images_option")}</span></label><label><span><span data-i18n="providers.api.known_context">${t("providers.api.known_context")}</span> <em data-i18n="providers.optional">${t("providers.optional")}</em></span><input name="custom_context_tokens" type="number" min="4096" step="1024" value="${config.custom_context_tokens || ""}" placeholder="32768"></label></div>` : ""}
-      ${studio.apiProviderError ? `<div class="h3ps-api-error"><strong ${studio.apiProviderError.code ? "" : 'data-provider-dynamic="api-error-code"'}>${escapeHtml(studio.apiProviderError.code || t("providers.api.connection_failed"))}</strong><span>${escapeHtml(studio.apiProviderError.message)}</span></div>` : ""}
+      <div data-api-provider-error>${renderApiProviderError()}</div>
       ${disclosure}
       <div class="h3ps-api-actions"><span>${selectedPreset.keyUrl ? `<a href="${selectedPreset.keyUrl}" target="_blank" rel="noopener noreferrer" data-i18n="providers.api.manage_key">${t("providers.api.manage_key")}</a>` : ""}${policyLinks}</span><button class="h3ps-api-primary" type="submit" data-i18n="providers.api.connect_test">${t("providers.api.connect_test")}</button></div>
     </form>
@@ -2363,7 +2383,6 @@ function selectModel(model, { preserveSettingsProvider = false } = {}) {
     }
   }
   if (model?.family === "gguf") studio.preferredDirectModelId = model.id;
-  const remote = ["external", "api"].includes(model?.family);
   if (model?.family !== "gguf") {
     studio.contextProfile = "auto";
     studio.kvCache = "auto";
@@ -2383,8 +2402,8 @@ function selectModel(model, { preserveSettingsProvider = false } = {}) {
   const keepLoadedControl = studio.root.querySelector("[data-keep-loaded-control]");
   const vramHandoff = studio.root.querySelector("[data-vram-handoff]");
   const vramHandoffControl = studio.root.querySelector("[data-vram-handoff-control]");
-  keepLoadedControl.hidden = remote && !model?.lifecycle_supported;
-  keepLoaded.checked = studio.keepModelLoaded;
+  keepLoadedControl.hidden = model?.family !== "gguf";
+  keepLoaded.checked = model?.family === "gguf" && studio.keepModelLoaded;
   if (vramHandoffControl && vramHandoff) {
     vramHandoffControl.hidden = !selectedModelSupportsVramHandoff();
     vramHandoff.checked = studio.vramHandoff;
@@ -2564,6 +2583,158 @@ function applyRuntimeOption(button, event) {
   saveUserPreferences(localStorage, studio);
 }
 
+function syncChatLauncher() {
+  if (!studio) return;
+  const tab = studio.root.querySelector('[data-workspace="chat"]');
+  if (!tab) return;
+  const configured = Boolean(studio.externalServerConfig?.url);
+  const activated = Boolean(studio.externalModel);
+  const available = configured && activated;
+  if (tab.hidden === available) {
+    console.log(
+      `[H3 Writer chat] chat tab ${available ? "shown" : "hidden"} ` +
+      `configured=${configured} activated=${activated} ` +
+      `error=${studio.externalServerError?.code || "none"}`,
+    );
+  }
+  tab.hidden = !available;
+  if (!available && studio.chatOpen) {
+    console.log(
+      `[H3 Writer chat] leaving the chat tab because llama.cpp is not active ` +
+      `configured=${configured} activated=${activated}`,
+    );
+    studio.chatOpen = false;
+    syncWorkspace();
+  }
+}
+
+function releaseComfyResources(reason) {
+  console.log(`[H3 Writer] releasing ComfyUI models and memory reason=${reason}`);
+  freeComfyVram({ freeMemory: true })
+    .then(() => {
+      console.log(`[H3 Writer] ComfyUI models and memory released reason=${reason}`);
+    })
+    .catch((error) => {
+      console.warn(
+        `[H3 Writer] ComfyUI models and memory release failed reason=${reason} ` +
+        `code=${error?.code || ""} message=${error?.message || error}`,
+      );
+    });
+}
+
+let llamaReleaseInFlight = false;
+
+async function releaseLlamaResources(reason) {
+  const config = studio?.externalServerConfig;
+  if (!config?.url) {
+    console.log(`[H3 Writer] llama cleanup skipped reason=${reason} configured=false`);
+    return;
+  }
+  if (llamaReleaseInFlight) {
+    console.log(`[H3 Writer] llama cleanup skipped reason=${reason} already_running=true`);
+    return;
+  }
+  llamaReleaseInFlight = true;
+  const endpoint = config.url;
+  const requestedModel = config.model || "";
+  console.log(
+    `[H3 Writer] checking llama server for cleanup reason=${reason} ` +
+    `endpoint=${endpoint} model=${requestedModel || "(any)"}`,
+  );
+  try {
+    let model = null;
+    try {
+      const result = await probeExternalServer(config);
+      model = result?.model || null;
+    } catch (error) {
+      const offline = error?.code === "EXTERNAL_SERVER_UNAVAILABLE";
+      console.warn(
+        `[H3 Writer] llama cleanup skipped reason=${reason} ` +
+        `${offline ? "online=false" : "probe_failed=true"} ` +
+        `endpoint=${endpoint} code=${error?.code || ""} message=${error?.message || error}`,
+      );
+      return;
+    }
+    console.log(
+      `[H3 Writer] llama server online reason=${reason} endpoint=${endpoint} ` +
+      `model=${model?.remote_model || ""} lifecycle_supported=${Boolean(model?.lifecycle_supported)}`,
+    );
+    if (!model?.lifecycle_supported || !model?.id) {
+      console.warn(
+        `[H3 Writer] llama cleanup skipped reason=${reason} lifecycle_supported=false ` +
+        `endpoint=${endpoint}; this llama.cpp server manages its own model lifecycle`,
+      );
+      return;
+    }
+    try {
+      const result = await unloadModel({ family: "external", model_id: model.id });
+      console.log(
+        `[H3 Writer] llama model unload requested reason=${reason} model=${model.id} ` +
+        `deferred=${result?.deferred === true}`,
+      );
+    } catch (error) {
+      console.warn(
+        `[H3 Writer] llama model unload failed reason=${reason} model=${model.id} ` +
+        `code=${error?.code || ""} message=${error?.message || error}`,
+      );
+    }
+  } finally {
+    llamaReleaseInFlight = false;
+  }
+}
+
+function releaseStudioResources(reason) {
+  releaseComfyResources(reason);
+  releaseLlamaResources(reason).catch((error) => {
+    console.warn(
+      `[H3 Writer] llama cleanup failed unexpectedly reason=${reason} ` +
+      `message=${error?.message || error}`,
+    );
+  });
+}
+
+function activateLlamaChatTab() {
+  if (!studio?.externalServerConfig?.url) return;
+  const frame = studio.root.querySelector("[data-chat-frame]");
+  if (frame && !frame.getAttribute("src")) {
+    frame.src = new URL("./llama_chat.html", import.meta.url).href;
+    console.log(`[H3 Writer chat] mounted ${frame.src}`);
+  }
+  if (studio.chatOpen) return;
+  studio.chatOpen = true;
+  syncWorkspace();
+  console.log("[H3 Writer chat] chat tab activated");
+}
+
+function postLocaleToChat() {
+  const frame = studio?.root?.querySelector("[data-chat-frame]");
+  if (!frame?.contentWindow) return;
+  const locale = getLocale();
+  try {
+    frame.contentWindow.postMessage({ type: "h3ps-locale", locale }, window.location.origin);
+    console.log(`[H3 Writer chat] sent locale=${locale} to the chat tab`);
+  } catch (error) {
+    console.warn(`[H3 Writer chat] could not send the locale to the chat tab: ${error?.message || error}`);
+  }
+}
+
+function postThemeToChat() {
+  const frame = studio?.root?.querySelector("[data-chat-frame]");
+  if (!frame?.contentWindow) return;
+  const theme = studio.theme === "light" ? "light" : "dark";
+  try {
+    frame.contentWindow.postMessage({ type: "h3ps-theme", theme }, window.location.origin);
+    console.log(`[H3 Writer chat] sent theme=${theme} to the chat tab`);
+  } catch (error) {
+    console.warn(`[H3 Writer chat] could not send the theme to the chat tab: ${error?.message || error}`);
+  }
+}
+
+function syncChatFramePreferences() {
+  postLocaleToChat();
+  postThemeToChat();
+}
+
 function syncRuntimeSummary(result = null) {
   if (!studio) return;
   syncContextAvailability();
@@ -2589,6 +2760,7 @@ function syncRuntimeSummary(result = null) {
     activeSummary = studio.contextProfile === "auto" ? t("models.runtime_summary") : `${studio.contextProfile === "custom" ? customContextLabel : contextLabel(studio.contextProfile)} · ${kvLabel(studio.kvCache)}`;
   }
   syncActiveModelSummary(activeSummary);
+  syncChatLauncher();
   studio.root.querySelectorAll("[data-runtime-option]").forEach((button) => {
     const selected = button.dataset.runtimeOption === "context"
       ? studio.contextProfile
@@ -2608,6 +2780,8 @@ function setSettingsOpen(open) {
   if (!open && selectedProvider) studio.settingsProvider = selectedProvider;
   studio.root.querySelector("[data-settings-view]").hidden = !open;
   studio.root.querySelectorAll("[data-generate-view]").forEach((element) => { element.hidden = open; });
+  const chatView = studio.root.querySelector("[data-chat-view]");
+  if (chatView) chatView.hidden = open || !studio.chatOpen;
   studio.root.querySelector("[data-open-settings-header]").hidden = open;
   studio.root.classList.toggle("is-settings-open", open);
   if (open) {
@@ -2635,6 +2809,18 @@ function externalConnectedContextTokens(model) {
   return model?.context_verified !== false && Number.isFinite(model?.server_context_tokens)
     ? Math.round(model.server_context_tokens / 1024)
     : null;
+}
+
+function syncExternalServerStatus() {
+  const status = studio.root?.querySelector?.("[data-external-provider-control] [data-external-server-status]");
+  if (status) {
+    const statusKey = studio.externalModel
+      ? "providers.status.connected"
+      : studio.externalServerError ? "providers.status.offline" : "providers.status.not_connected";
+    status.dataset.i18n = statusKey;
+    status.textContent = t(statusKey);
+  }
+  syncProviderPanelCopy();
 }
 
 async function connectExternalServer(form) {
@@ -2675,12 +2861,13 @@ async function connectExternalServer(form) {
     if (studio.externalConnectionAttempt !== attempt || (studio.modelSelectionRevision || 0) !== selectionRevision) return;
     studio.externalServerError = error;
     showErrorToast("toast.external.failed.title", error);
-    renderInferenceSettings();
+    syncExternalServerStatus();
   } finally {
     if (studio.externalConnectionAttempt === attempt) {
+      const labelKey = studio.externalModel ? "providers.external.reconnect" : "providers.external.connect";
       submit.disabled = false;
-      submit.textContent = t("providers.external.connect");
-      submit.dataset.i18n = "providers.external.connect";
+      submit.textContent = t(labelKey);
+      submit.dataset.i18n = labelKey;
     }
   }
 }
@@ -2699,6 +2886,12 @@ function disconnectExternalServer() {
   syncRuntimeSummary();
   saveUserPreferences(localStorage, studio);
   showToast(msg("toast.external.disconnected.title"), msg("toast.external.disconnected.message"));
+}
+
+function syncApiProviderError() {
+  const slot = studio.root?.querySelector?.("[data-api-provider-control] [data-api-provider-error]");
+  if (slot) slot.innerHTML = renderApiProviderError();
+  syncProviderPanelCopy();
 }
 
 async function connectConfiguredApiProvider(form) {
@@ -2769,7 +2962,7 @@ async function connectConfiguredApiProvider(form) {
     if (studio.apiConnectionAttempt !== attempt || (studio.modelSelectionRevision || 0) !== selectionRevision) return;
     studio.apiProviderError = error;
     showErrorToast("toast.api.failed.title", error);
-    renderInferenceSettings();
+    syncApiProviderError();
   } finally {
     if (studio.apiConnectionAttempt === attempt) {
       submit.disabled = false;
@@ -3249,6 +3442,7 @@ function syncTheme() {
   if (!studio) return;
   studio.root.dataset.theme = studio.theme;
   studio.floatingMedia?.refresh();
+  postThemeToChat();
   const button = studio.root.querySelector("[data-theme-toggle]");
   if (!button) return;
   const light = studio.theme === "light";
@@ -3344,6 +3538,7 @@ function createStudio() {
         <nav class="h3ps-workspaces" aria-label="${t("header.workspace_nav")}" data-i18n-aria-label="header.workspace_nav">
           <button type="button" data-workspace="video" data-i18n="header.video_workspace">H3 Video</button>
           <button type="button" data-workspace="music" data-i18n="header.music_workspace">Music 3</button>
+          <button type="button" data-workspace="chat" class="h3ps-chat-workspace" hidden title="${t("chat.open_title")}" data-i18n-title="chat.open_title">${icon("chat", 14)}<span data-i18n="chat.open">${t("chat.open")}</span></button>
         </nav>
         <div class="h3ps-header-meta">
           <div class="h3ps-guide-picker">
@@ -3387,6 +3582,7 @@ function createStudio() {
 
       <div class="h3ps-workspace" data-generate-view>
         <section class="h3ps-input-panel">
+          ${generateModelSummaryMarkup(icon)}
           <div data-video-inputs>
           <div class="h3ps-section-heading">
             <span><small data-i18n="workspace.media_section">Media</small><strong data-h3ps-mode-title></strong></span>
@@ -3473,8 +3669,6 @@ function createStudio() {
               </div>
             </section>
           </div>
-
-          ${generateModelSummaryMarkup(icon)}
         </section>
 
         <section class="h3ps-output-panel" aria-label="${t("workspace.generated_result")}" data-i18n-aria-label="workspace.generated_result">
@@ -3505,6 +3699,10 @@ function createStudio() {
         </section>
       </div>
 
+      <div class="h3ps-chat-view" data-chat-view hidden>
+        <iframe class="h3ps-chat-frame" data-chat-frame title="${t("chat.title")}" data-i18n-title="chat.title"></iframe>
+      </div>
+
       <footer class="h3ps-footer" data-generate-view>
         <div class="h3ps-footer-memory-actions">
           <button class="h3ps-memory-action" type="button" data-comfy-memory-action title="${t("generation.free_vram_tooltip")}" data-i18n-title="generation.free_vram_tooltip">${icon("memory", 15)}<span data-i18n="workspace.free_comfy_vram">Free ComfyUI VRAM</span></button>
@@ -3514,7 +3712,7 @@ function createStudio() {
         <div class="h3ps-footer-actions">
           <span class="h3ps-generation-options">
             <label class="h3ps-toggle-control"><input type="checkbox" data-thinking><span></span>Thinking</label>
-            <label class="h3ps-toggle-control" data-keep-loaded-control title="${t("workspace.keep_model_loaded_tooltip")}" data-i18n-title="workspace.keep_model_loaded_tooltip"><input type="checkbox" data-keep-loaded><span></span><span class="h3ps-toggle-label" data-i18n="workspace.keep_model_loaded">Keep model loaded</span></label>
+            <label class="h3ps-toggle-control" data-keep-loaded-control title="${t("workspace.keep_model_loaded_tooltip")}" data-i18n-title="workspace.keep_model_loaded_tooltip" hidden><input type="checkbox" data-keep-loaded><span></span><span class="h3ps-toggle-label" data-i18n="workspace.keep_model_loaded">Keep model loaded</span></label>
             ${autoVramControlMarkup(VRAM_HANDOFF_SUPPORTED)}
           </span>
           <button class="h3ps-primary-button" type="button" data-generate>${icon("spark", 16)}<span data-generate-label>Generate prompt</span></button>
@@ -3645,15 +3843,25 @@ function createStudio() {
     if (!event.target.closest("[data-clear-control]")) setClearMenuOpen(false);
   });
   root.querySelectorAll("[data-workspace]").forEach((button) => button.addEventListener("click", () => {
+    if (button.dataset.workspace === "chat") {
+      activateLlamaChatTab();
+      return;
+    }
     const nextMode = button.dataset.workspace === "music" ? "Music3" : studio.lastVideoMode;
     if (!isGenerationModeAvailable(studio.selectedModel, nextMode)) return;
-    if (nextMode === studio.mode) return;
-    stashCurrentModeDraft();
-    if (studio.mode !== "Music3") studio.lastVideoMode = studio.mode;
-    studio.mode = nextMode;
+    if (nextMode === studio.mode && !studio.chatOpen) return;
+    const modeChanged = nextMode !== studio.mode;
+    if (modeChanged) {
+      stashCurrentModeDraft();
+      if (studio.mode !== "Music3") studio.lastVideoMode = studio.mode;
+      studio.mode = nextMode;
+    }
+    studio.chatOpen = false;
     syncWorkspace();
-    restoreModeDraft(studio.mode);
-    renderMedia(studio.mode);
+    if (modeChanged) {
+      restoreModeDraft(studio.mode);
+      renderMedia(studio.mode);
+    }
     syncRuntimeSummary();
     saveUserPreferences(localStorage, studio);
   }));
@@ -3672,6 +3880,37 @@ function createStudio() {
   root.querySelector("[data-open-settings-header]").addEventListener("click", () => setSettingsOpen(true));
   root.querySelector("[data-open-settings]").addEventListener("click", () => setSettingsOpen(true));
   root.querySelector("[data-close-settings]").addEventListener("click", () => setSettingsOpen(false));
+  const chatFrame = root.querySelector("[data-chat-frame]");
+  chatFrame?.addEventListener("load", () => {
+    if (studio?.chatBusy) {
+      console.log("[H3 Writer chat] chat page reloaded; clearing the stale busy flag");
+    }
+    if (studio) studio.chatBusy = false;
+    syncChatFramePreferences();
+  });
+  window.addEventListener("message", (event) => {
+    if (event.origin !== window.location.origin || !studio) return;
+    if (event.source && event.source !== chatFrame?.contentWindow) return;
+    if (event.data?.type === "h3ps-chat-busy") {
+      const busy = event.data.busy === true;
+      if (studio.chatBusy !== busy) {
+        studio.chatBusy = busy;
+        console.log(`[H3 Writer chat] reply generating=${busy} reported by the chat tab`);
+      }
+      return;
+    }
+    if (event.data?.type === "h3ps-close-chat") {
+      studio.chatOpen = false;
+      syncWorkspace();
+      console.log("[H3 Writer chat] closed from the chat tab");
+      return;
+    }
+    if (event.data?.type !== "h3ps-open-settings") return;
+    setSettingsOpen(true);
+    studio.settingsProvider = "external";
+    renderInferenceSettings();
+    window.focus();
+  });
   root.querySelector("[data-clear-media]").addEventListener("click", () => {
     setClearMenuOpen(false);
     clearCurrentMedia();
@@ -3825,10 +4064,16 @@ function createStudio() {
     syncRuntimeSummary();
   });
   root.querySelector("[data-keep-loaded]").addEventListener("change", (event) => {
+    if (studio.selectedModel?.family !== "gguf") {
+      event.target.checked = false;
+      studio.keepModelLoaded = false;
+      return;
+    }
     studio.keepModelLoaded = event.target.checked;
   });
   root.querySelector("[data-vram-handoff]")?.addEventListener("change", (event) => {
     studio.vramHandoff = event.target.checked;
+    studio.vramHandoffChosen = true;
     saveUserPreferences(localStorage, studio);
   });
   const updateBriefCount = () => {
@@ -4146,6 +4391,7 @@ function createStudio() {
   onLocaleChange(() => {
     console.log(`[H3 Writer i18n] ui refreshed locale=${document.documentElement.lang}`);
     refreshLocalizedUi();
+    postLocaleToChat();
   });
   return studio;
 }
@@ -4226,12 +4472,26 @@ function openStudio() {
   modal.tabIndex = -1;
   updateBriefLayout();
   scheduleStudioFocus(() => modal.querySelector("button[data-close-studio]:not([hidden])") || modal);
+  releaseStudioResources("studio-opened");
 }
 
 function closeStudio() {
   if (!HOST_CAPABILITIES.windowed) return false;
   mediaPanelRequest++;
   if (!studio?.root.classList.contains("is-open")) return;
+  const writerBusy = Boolean(studio.requestBusy);
+  const chatBusy = Boolean(studio.chatBusy);
+  if (writerBusy || chatBusy) {
+    console.log(
+      `[H3 Writer] close refused while generating request_busy=${writerBusy} ` +
+      `chat_busy=${chatBusy}`,
+    );
+    const message = writerBusy && chatBusy ? "toast.close.both_busy"
+      : writerBusy ? "toast.close.writer_busy"
+        : "toast.close.chat_busy";
+    showToast(msg("toast.close.busy_title"), msg(message));
+    return false;
+  }
   const modal = studio.root.querySelector(".h3ps-modal");
   if (studio.mediaEditor?.close() === false) return false;
   if (studio.mediaComposer?.close() === false) return false;
@@ -4250,6 +4510,7 @@ function closeStudio() {
   if (studio.root.contains(document.activeElement)) document.activeElement.blur();
   if (!focusAvailableControl(studioReturnFocus)) focusAvailableControl(app.canvas?.canvas);
   studioReturnFocus = null;
+  releaseStudioResources("studio-closed");
 }
 
 function syncLauncherLabels(doc = document) {

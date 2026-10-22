@@ -540,6 +540,7 @@ test("user preferences persist only stable non-secret settings", () => {
     musicLyricsUseBrief: false,
     fullscreen: true,
     vramHandoff: true,
+    vramHandoffChosen: true,
     theme: "light",
     interfaceSize: "125",
     selectedModel: { id: "api::secret-connection::model", api_connection_id: "secret-connection" },
@@ -569,6 +570,7 @@ test("user preferences persist only stable non-secret settings", () => {
     music_lyrics_use_brief: false,
     fullscreen: true,
     vram_handoff: true,
+    vram_handoff_chosen: true,
     theme: "light",
     interface_size: "125",
   });
@@ -609,7 +611,8 @@ test("user preferences ignore corrupt or unknown versions and sanitize fields", 
     direct_reasoning_effort: "auto",
     music_lyrics_use_brief: true,
     fullscreen: false,
-    vram_handoff: false,
+    vram_handoff: true,
+    vram_handoff_chosen: false,
     theme: "dark",
     interface_size: "100",
   });
@@ -663,7 +666,8 @@ test("a clean first run defaults to Ollama while saved provider preferences rema
   const clean = createStudioState({ sessionId: "clean", storage: memoryStorage() });
   assert.equal(clean.settingsProvider, "ollama");
   assert.equal(clean.preferredProvider, "ollama");
-  assert.equal(clean.vramHandoff, false);
+  assert.equal(clean.vramHandoff, true);
+  assert.equal(clean.vramHandoffChosen, false);
   assert.equal(clean.theme, "dark");
   assert.equal(clean.interfaceSize, "100");
 
@@ -684,6 +688,33 @@ test("a clean first run defaults to Ollama while saved provider preferences rema
   });
   assert.equal(savedApi.settingsProvider, "api");
   assert.equal(savedApi.preferredProvider, "api");
+});
+
+test("Auto VRAM defaults on but an explicit opt-out persists", () => {
+  const legacy = memoryStorage({
+    [USER_PREFERENCES_STORAGE_KEY]: JSON.stringify({ version: 1, vram_handoff: false }),
+  });
+  assert.equal(loadUserPreferences(legacy).vram_handoff, true);
+  assert.equal(loadUserPreferences(legacy).vram_handoff_chosen, false);
+  assert.equal(createStudioState({ sessionId: "legacy-vram", storage: legacy }).vramHandoff, true);
+
+  const optedOut = memoryStorage({
+    [USER_PREFERENCES_STORAGE_KEY]: JSON.stringify({ version: 1, vram_handoff: false, vram_handoff_chosen: true }),
+  });
+  assert.equal(loadUserPreferences(optedOut).vram_handoff, false);
+  assert.equal(loadUserPreferences(optedOut).vram_handoff_chosen, true);
+  const optedOutState = createStudioState({ sessionId: "opted-out", storage: optedOut });
+  assert.equal(optedOutState.vramHandoff, false);
+  assert.equal(optedOutState.vramHandoffChosen, true);
+
+  const freshStorage = memoryStorage();
+  const fresh = createStudioState({ sessionId: "fresh-vram", storage: freshStorage });
+  assert.equal(fresh.vramHandoff, true);
+  fresh.vramHandoff = false;
+  fresh.vramHandoffChosen = true;
+  saveUserPreferences(freshStorage, fresh);
+  assert.equal(loadUserPreferences(freshStorage).vram_handoff, false);
+  assert.equal(loadUserPreferences(freshStorage).vram_handoff_chosen, true);
 });
 
 test("audio notice triggers once per global zero-to-present transition", () => {
@@ -885,17 +916,44 @@ test("studio state owns model, runtime, lifecycle, and System Prompt settings", 
   assert.equal(systemPromptProfile("Music3Lyrics"), "music3_lyrics");
   assert.equal(currentSystemPromptOverride(state, "Reference"), "Custom reference");
 
+  state.keepModelLoaded = true;
   selectModelState(state, { id: "direct-model", family: "gguf", capabilities: { audio: true } });
   assert.equal(state.settingsProvider, "direct");
   assert.equal(state.audioSupported, true);
+  assert.equal(state.keepModelLoaded, true);
 
+  state.keepModelLoaded = true;
   selectModelState(state, { id: "ollama::gemma4:12b", family: "ollama", remote_model: "gemma4:12b", capabilities: { audio: false } });
   assert.equal(state.settingsProvider, "ollama");
+  assert.equal(state.keepModelLoaded, false);
 
+  state.keepModelLoaded = true;
   selectModelState(state, { id: "api::connection::model", family: "api", api_connection_id: "connection", remote_model: "model", capabilities: { audio: false } });
   assert.equal(state.settingsProvider, "api");
   assert.equal(state.keepModelLoaded, false);
+});
+
+test("only Direct GGUF can keep a model loaded", () => {
+  const state = createStudioState({ sessionId: "11111111-2222-4333-8444-555555555555", storage: memoryStorage() });
+  state.keepModelLoaded = true;
+  selectModelState(state, { id: "ollama::gemma", family: "ollama", remote_model: "gemma", capabilities: { audio: false } });
   assert.equal(state.keepModelLoaded, false);
+  state.keepModelLoaded = true;
+  assert.equal(buildGeneratePayload(state, { creativeBrief: "A quiet shot.", seed: 1 }).unload_after, true);
+
+  state.keepModelLoaded = true;
+  selectModelState(state, { id: "external-model", family: "external", capabilities: { audio: false } });
+  assert.equal(state.keepModelLoaded, false);
+  state.keepModelLoaded = true;
+  assert.equal(buildGeneratePayload(state, { creativeBrief: "A quiet shot.", seed: 1 }).unload_after, true);
+
+  state.keepModelLoaded = true;
+  selectModelState(state, { id: "direct-model.gguf", family: "gguf", capabilities: { audio: false } });
+  assert.equal(state.keepModelLoaded, true);
+  assert.equal(buildGeneratePayload(state, { creativeBrief: "A quiet shot.", seed: 1 }).unload_after, false);
+
+  assert.match(mainSource, /keepLoadedControl\.hidden = model\?\.family !== "gguf"/);
+  assert.match(mainSource, /if \(studio\.selectedModel\?\.family !== "gguf"\) \{/);
 });
 
 test("Reference assets replace one dropped file and append multiple dropped files", () => {
@@ -1491,6 +1549,13 @@ test("provider panel copy follows locale changes without replacing form state", 
     panels.syncProviderPanelCopy();
     assert.equal(customPreset.querySelector("strong").textContent, "Custom");
     assert.equal(customContainer.querySelector(".h3ps-api-intro strong").textContent, "Connect Custom");
+
+    state.apiProviderError = { message: "boom" };
+    customContainer.innerHTML = `<div data-api-provider-control>${panels.renderApiProviderControl()}</div>`;
+    assert.equal(customContainer.querySelector(".h3ps-api-error strong").textContent, "Connection failed");
+    setLanguagePreference("zh-CN");
+    panels.syncProviderPanelCopy();
+    assert.equal(customContainer.querySelector(".h3ps-api-error strong").textContent, "连接失败");
   } finally {
     configureI18n({ preference: "en", root: panelRoot, navigatorLanguage: "en-US" });
   }
@@ -1551,6 +1616,13 @@ test("Settings shows compact global System Prompt summaries and an on-demand edi
   assert.match(summaryMarkup, /data-i18n="models\.prompt_model"/);
   assert.match(summaryMarkup, /data-i18n="models\.runtime_summary">Runtime · Auto</);
   assert.match(summaryMarkup, /data-active-runtime-summary/);
+  assert.match(mainSource, /<section class="h3ps-input-panel">\s*\$\{generateModelSummaryMarkup\(icon\)\}/);
+  assert.match(mainSource, /function selectedModelCategoryLabel\(model\)/);
+  assert.match(mainSource, /if \(model\?\.family === "gguf"\) return t\("settings\.direct"\)/);
+  assert.match(mainSource, /if \(model\?\.family === "external"\) return t\("settings\.external"\)/);
+  assert.match(mainSource, /data-active-model-source[^\n]*selectedModelCategoryLabel\(model\)/);
+  assert.match(mainSource, /data-active-model-name[^\n]*model\.name\.split\("\/"\)\.pop\(\)/);
+  assert.match(stylesSource, /\.h3ps-input-panel > \.h3ps-active-model \{/);
   assert.match(markup, /data-runtime-option="context" data-value="large">32K</);
   assert.match(markup, /data-runtime-option="context" data-value="maximum">48K</);
   assert.match(markup, /data-runtime-option="context" data-value="custom" data-i18n="settings\.custom">Custom</);
@@ -1586,6 +1658,319 @@ test("Settings shows compact global System Prompt summaries and an on-demand edi
   assert.match(mainSource, /t\("runtime\.server_managed"\)/);
   assert.match(mainSource, /generate\(buildGeneratePayload\(studio/);
   assert.match(mainSource, /refine\(buildRefinePayload\(studio/);
+});
+
+test("an external llama.cpp chat tab is mounted in the writer header without state loss", async () => {
+  const [chatHtml, chatCss, chatSource, markdownSource] = await Promise.all([
+    readFile(new URL("../web/llama_chat.html", import.meta.url), "utf8"),
+    readFile(new URL("../web/styles/llama_chat.css", import.meta.url), "utf8"),
+    readFile(new URL("../web/llama_chat.js", import.meta.url), "utf8"),
+    readFile(new URL("../web/markdown.js", import.meta.url), "utf8"),
+  ]);
+  assert.match(mainSource, /chat: '<path d="M20 12a8 8 0 0 1-8 8H4l2-3\.2A8 8 0 1 1 20 12Z"\/><path d="M8 11h8m-8 3h5"\/>'/);
+  assert.match(mainSource, /<button type="button" data-workspace="chat" class="h3ps-chat-workspace" hidden title="\$\{t\("chat\.open_title"\)\}" data-i18n-title="chat\.open_title">\$\{icon\("chat", 14\)\}<span data-i18n="chat\.open">/);
+  assert.match(mainSource, /<div class="h3ps-chat-view" data-chat-view hidden>\s*<iframe class="h3ps-chat-frame" data-chat-frame/);
+  assert.match(mainSource, /const configured = Boolean\(studio\.externalServerConfig\?\.url\);/);
+  assert.match(mainSource, /const activated = Boolean\(studio\.externalModel\);/);
+  assert.match(mainSource, /const available = configured && activated;/);
+  assert.match(mainSource, /tab\.hidden = !available;/);
+  assert.match(mainSource, /frame\.src = new URL\("\.\/llama_chat\.html", import\.meta\.url\)\.href/);
+  assert.match(mainSource, /frame\.contentWindow\.postMessage\(\{ type: "h3ps-locale", locale \}, window\.location\.origin\)/);
+  assert.match(mainSource, /frame\.contentWindow\.postMessage\(\{ type: "h3ps-theme", theme \}, window\.location\.origin\)/);
+  assert.match(mainSource, /studio\.floatingMedia\?\.refresh\(\);\s*postThemeToChat\(\);/);
+  assert.match(mainSource, /chatFrame\?\.addEventListener\("load", \(\) => \{/);
+  assert.match(mainSource, /if \(studio\) studio\.chatBusy = false;/);
+  assert.match(mainSource, /syncChatFramePreferences\(\);\s*\}\);/);
+  assert.match(mainSource, /event\.data\?\.type === "h3ps-chat-busy"/);
+  assert.match(mainSource, /const busy = event\.data\.busy === true;/);
+  assert.match(mainSource, /studio\.chatBusy = busy;/);
+  assert.match(mainSource, /const writerBusy = Boolean\(studio\.requestBusy\);/);
+  assert.match(mainSource, /const chatBusy = Boolean\(studio\.chatBusy\);/);
+  assert.match(mainSource, /if \(writerBusy \|\| chatBusy\) \{/);
+  assert.match(mainSource, /toast\.close\.busy_title/);
+  assert.doesNotMatch(mainSource, /window\.open\(target\.href, "h3ps-llama-chat"/);
+  assert.match(mainSource, /studio\.chatOpen = true;/);
+  assert.match(mainSource, /classList\.toggle\("is-chat", chat\)/);
+  assert.match(mainSource, /chatView\.hidden = open \|\| !studio\.chatOpen;/);
+  assert.match(mainSource, /if \(event\.origin !== window\.location\.origin \|\| !studio\) return;/);
+  assert.match(mainSource, /event\.source !== chatFrame\?\.contentWindow/);
+  assert.match(mainSource, /event\.data\?\.type === "h3ps-close-chat"/);
+  assert.match(mainSource, /studio\.settingsProvider = "external";\s*renderInferenceSettings\(\);/);
+  assert.doesNotMatch(mainSource.slice(mainSource.indexOf("window.addEventListener(\"message\""), mainSource.indexOf("root.querySelector(\"[data-clear-media]\")")), /selectSettingsProvider\("external"\)/);
+  assert.match(stylesSource, /\.h3ps-workspaces button\.h3ps-chat-workspace \{/);
+  assert.match(stylesSource, /\.h3ps-root\.is-chat \.h3ps-workspace-toolbar/);
+  assert.match(stylesSource, /\.h3ps-chat-frame \{/);
+
+  assert.match(chatHtml, /<link rel="stylesheet" href="\.\/styles\/llama_chat\.css">/);
+  assert.match(chatHtml, /<script type="module" src="\.\/llama_chat\.js"><\/script>/);
+  for (const attribute of [
+    "data-chat-app", "data-chat-status", "data-chat-banner", "data-chat-messages",
+    "data-chat-form", "data-chat-input", "data-chat-send", "data-chat-stop",
+    "data-chat-unload",
+    "data-chat-params", "data-chat-close", "data-chat-empty", "data-chat-retry",
+    "data-chat-history-toggle", "data-chat-history", "data-chat-history-close",
+    "data-chat-history-list", "data-chat-history-empty",
+  ]) {
+    assert.match(chatHtml, new RegExp(attribute));
+  }
+  assert.match(chatHtml, /data-chat-input[^>]*maxlength="200000"/);
+  assert.match(chatHtml, /data-chat-attach[^>]*data-i18n-title="chat\.attach"/);
+  assert.match(chatHtml, /data-chat-file[^>]*accept="image\/jpeg,image\/png,image\/webp,video\/mp4,video\/webm,video\/mpeg"[^>]*multiple/);
+  assert.match(chatHtml, /data-chat-attachments hidden/);
+  assert.match(chatHtml, /data-chat-attach-error role="alert" hidden/);
+  assert.match(chatHtml, /data-chat-send disabled/);
+  assert.match(chatHtml, /data-chat-stop hidden/);
+  assert.match(chatHtml, /data-chat-unload hidden[^>]*data-i18n="chat\.unload"/);
+  assert.match(chatHtml, /<input type="checkbox" data-chat-thinking checked>/);
+  assert.match(chatHtml, /data-i18n="chat\.thinking_toggle"/);
+  assert.match(chatHtml, /data-i18n="chat\.thinking_toggle_hint"/);
+  assert.match(chatHtml, /data-chat-thinking-toggle aria-pressed="true"/);
+  assert.match(chatHtml, /data-chat-thinking-toggle[^>]*data-i18n-title="chat\.thinking_on_title"/);
+  assert.match(chatHtml, /data-i18n="chat\.thinking">Thinking<\/span>/);
+  assert.match(chatHtml, /data-chat-keep-loaded aria-pressed="true" hidden/);
+  assert.match(chatHtml, /data-chat-keep-loaded[^>]*data-i18n-title="chat\.keep_loaded_on_title"/);
+  assert.match(chatHtml, /data-i18n="chat\.keep_loaded">Keep loaded<\/span>/);
+  assert.match(chatHtml, /data-chat-history-toggle aria-expanded="false" aria-controls="h3lc-history" data-i18n="chat\.history"/);
+  assert.match(chatHtml, /<aside class="h3lc-history" id="h3lc-history" data-chat-history hidden>/);
+  assert.match(chatHtml, /data-chat-history-close[^>]*data-i18n-title="chat\.close_history"/);
+  assert.match(chatHtml, /<ul class="h3lc-history-list" data-chat-history-list><\/ul>/);
+  assert.match(chatHtml, /data-i18n="chat\.empty_body">Messages use the model connected in H3 Prompt Writer\. Saved conversations stay in this browser; images and videos are not saved\.<\/p>/);
+
+  assert.match(chatSource, /const CHAT_ENDPOINT = "\/h3studio\/chat";/);
+  assert.match(chatSource, /const CANCEL_ENDPOINT = "\/h3studio\/chat\/cancel";/);
+  assert.match(chatSource, /const PROBE_ENDPOINT = "\/h3studio\/external-server\/probe";/);
+  assert.match(chatSource, /const UNLOAD_ENDPOINT = "\/h3studio\/unload";/);
+  assert.match(chatSource, /JSON\.stringify\(\{ family: "external", model_id: modelId \}\)/);
+  assert.match(chatSource, /function isLocalEndpoint\(url\) \{/);
+  assert.match(chatSource, /host === "localhost" \|\| host === "127\.0\.0\.1" \|\| host === "::1"/);
+  assert.match(chatSource, /function canManageModel\(\) \{/);
+  assert.match(chatSource, /return isLocalEndpoint\(state\.config\?\.url\)/);
+  assert.match(chatSource, /state\.modelInfo\?\.lifecycle_supported === true/);
+  assert.match(chatSource, /Boolean\(state\.modelInfo\?\.id\)/);
+  assert.match(chatSource, /refs\.unload\?\.addEventListener\("click", \(\) => unloadModel\(\)\)/);
+  assert.match(chatSource, /thinking: document\.querySelector\("\[data-chat-thinking\]"\)/);
+  assert.match(chatSource, /thinkingToggle: document\.querySelector\("\[data-chat-thinking-toggle\]"\)/);
+  assert.match(chatSource, /keepLoaded: document\.querySelector\("\[data-chat-keep-loaded\]"\)/);
+  assert.match(chatSource, /const options = \{ thinking: refs\.thinking\.checked \};/);
+  assert.match(chatSource, /refs\.thinking\.checked = true;/);
+  assert.match(chatSource, /function syncThinkingToggle\(\) \{/);
+  assert.match(chatSource, /refs\.thinkingToggle\.setAttribute\("aria-pressed", String\(on\)\)/);
+  assert.match(chatSource, /refs\.thinkingToggle\?\.addEventListener\("click"/);
+  assert.match(chatSource, /refs\.thinking\.addEventListener\("change"/);
+  assert.match(chatSource, /thinking=\$\{refs\.thinking\.checked \? "on" : "off"\}/);
+  assert.match(chatSource, /thinking=\$\{payload\.thinking\}/);
+  assert.match(chatSource, /keepLoaded: true,/);
+  assert.match(chatSource, /function syncKeepLoaded\(\) \{/);
+  assert.match(chatSource, /refs\.keepLoaded\.hidden = !canManageModel\(\)/);
+  assert.match(chatSource, /refs\.keepLoaded\?\.addEventListener\("click"/);
+  assert.match(chatSource, /keep_loaded: state\.keepLoaded,/);
+  assert.match(chatSource, /keep_loaded=\$\{payload\.keep_loaded\}/);
+  assert.match(chatSource, /function copyTextToClipboard\(text\) \{/);
+  assert.match(chatSource, /navigator\.clipboard\?\.writeText/);
+  assert.match(chatSource, /document\.execCommand\("copy"\)/);
+  assert.match(chatSource, /function copyMessage\(article, button\) \{/);
+  assert.match(chatSource, /from "\.\/markdown\.js";/);
+  assert.match(chatSource, /function rawMessageText\(article\) \{/);
+  assert.match(chatSource, /const text = rawMessageText\(article\);/);
+  assert.match(chatSource, /content\.className = "h3lc-message-body h3lc-markdown";/);
+  assert.match(chatSource, /body\.className = "h3lc-message-body h3lc-markdown";/);
+  assert.match(chatSource, /renderMarkdown\(body, stored\.text\)/);
+  assert.match(chatSource, /function scheduleMarkdownRender\(assistant, wasNear\) \{/);
+  assert.match(chatSource, /scheduleMarkdownRender\(assistant, wasNear\);/);
+  assert.match(chatSource, /cancelMarkdownRender\(assistant\);/);
+  assert.match(chatSource, /renderMarkdown\(assistant\.content, state\.assistantText\);\s*assistant\.article\._rawText = state\.assistantText;/);
+  assert.match(chatSource, /article\._rawText = text;/);
+  assert.match(chatSource, /function deleteMessage\(article\) \{/);
+  assert.match(chatSource, /state\.messages\.splice\(index, 1\)/);
+  assert.match(chatSource, /dataset\.chatDelete = ""/);
+  assert.match(chatSource, /appendUserMessage\(text, attachments, message\)/);
+  assert.match(chatSource, /state\.stats = \{/);
+  assert.match(chatSource, /elapsed: Number\.isFinite\(elapsed\) && elapsed > 0 \? elapsed : null/);
+  assert.match(chatSource, /function addStats\(article, stats\) \{/);
+  assert.match(chatSource, /t\("chat\.stats", \{ seconds, speed/);
+  assert.match(chatSource, /from "\.\/chat_history\.js";/);
+  assert.match(chatSource, /historyToggle: document\.querySelector\("\[data-chat-history-toggle\]"\)/);
+  assert.match(chatSource, /historyList: document\.querySelector\("\[data-chat-history-list\]"\)/);
+  assert.match(chatSource, /historyEmpty: document\.querySelector\("\[data-chat-history-empty\]"\)/);
+  assert.match(chatSource, /function persistConversation\(\) \{/);
+  assert.match(chatSource, /const messages = sanitizeConversationMessages\(state\.messages\);/);
+  assert.match(chatSource, /state\.history = saveChatConversation\(localStorage, conversation\)/);
+  assert.match(chatSource, /state\.history = deleteChatConversation\(localStorage, id\)/);
+  assert.match(chatSource, /state\.history = loadChatHistory\(localStorage\)/);
+  assert.match(chatSource, /function renderHistory\(\) \{/);
+  assert.match(chatSource, /refs\.historyList\.append\(item\)/);
+  assert.match(chatSource, /function loadConversation\(id\) \{/);
+  assert.match(chatSource, /function requestDeleteConversation\(id\) \{/);
+  assert.match(chatSource, /\}, 3000\);/);
+  assert.match(chatSource, /t\("chat\.history_media_omitted", \{ count: stored\.media \}\)/);
+  assert.match(chatSource, /const content = stored\.text\s*\|\| \(stored\.media \? t\("chat\.history_media_omitted", \{ count: stored\.media \}\) : ""\);/);
+  assert.match(chatSource, /function newChat\(\) \{\s*persistConversation\(\);/);
+  assert.match(chatSource, /if \(current\) persistConversation\(\);/);
+  assert.match(chatSource, /refs\.historyToggle\.addEventListener\("click"/);
+  assert.match(chatSource, /if \(!refs\.history\.hidden\) \{\s*event\.preventDefault\(\);\s*setHistoryOpen\(false\);/);
+  assert.match(chatSource, /if \(open && !refs\.history\.hidden\) setHistoryOpen\(false\);/);
+  assert.match(chatSource, /const busy = state\.streaming \|\| state\.unloading;/);
+  assert.match(chatSource, /button\.disabled = busy;/);
+  assert.match(chatSource, /window\.addEventListener\("pagehide", \(\) => \{\s*persistConversation\(\);/);
+  assert.match(chatSource, /event\.key === CHAT_HISTORY_STORAGE_KEY/);
+  assert.match(chatSource, /configureI18n\(\{/);
+  assert.match(chatSource, /translateDom\(refs\.root\)/);
+  assert.match(chatSource, /window\.addEventListener\("storage"/);
+  assert.match(chatSource, /body\.getReader\(\)/);
+  assert.match(chatSource, /timeoutMs: null/);
+  assert.match(chatSource, /api\.fetchApi\(CANCEL_ENDPOINT/);
+  assert.match(chatSource, /localizedError\(warning, "chat\.error\.title"\)/);
+  assert.match(chatSource, /const embeddedHost = window\.parent !== window \? window\.parent : null;/);
+  assert.doesNotMatch(chatSource, /from "\/scripts\/app\.js"/);
+  assert.doesNotMatch(chatSource, /from "\/scripts\/api\.js"/);
+  assert.match(chatSource, /function readHostApi\(\) \{/);
+  assert.match(chatSource, /const host = embeddedHost\?\.comfyAPI\?\.api\?\.api;/);
+  assert.match(chatSource, /if \(host\?\.fetchApi\) return host;/);
+  assert.match(chatSource, /function readHostApp\(\) \{/);
+  assert.match(chatSource, /return embeddedHost\?\.comfyAPI\?\.app\?\.app \|\| null;/);
+  assert.match(chatSource, /const hostApi = readHostApi\(\);/);
+  assert.match(chatSource, /const api = hostApi \|\| \{/);
+  assert.match(chatSource, /return fetch\(new URL\(route, window\.location\.origin\), options\);/);
+  assert.match(chatSource, /const comfyApp = readHostApp\(\);/);
+  assert.match(chatSource, /app: comfyApp,/);
+  assert.match(chatSource, /booted embedded=\$\{Boolean\(embeddedHost\)\} api=\$\{hostApi \? "host" : "fetch"\}/);
+  assert.match(chatSource, /preference: hostLocale \|\| preferences\?\.language \|\| "auto"/);
+  assert.match(chatSource, /event\.data\?\.type !== "h3ps-locale"/);
+  assert.match(chatSource, /let hostTheme = null;/);
+  assert.match(chatSource, /document\.documentElement\.dataset\.theme = hostTheme \|\| storedTheme;/);
+  assert.match(chatSource, /event\.data\?\.type === "h3ps-theme"/);
+  assert.match(chatSource, /postToWriter\(\{ type: "h3ps-close-chat" \}\)/);
+  assert.match(chatSource, /postToWriter\(\{ type: "h3ps-open-settings" \}\)/);
+  assert.match(chatSource, /postToWriter\(\{ type: "h3ps-chat-busy", busy \}\)/);
+  assert.match(chatSource, /state\.streaming = true;\s*reportBusy\(true\);/);
+  assert.match(chatSource, /state\.streaming = false;\s*reportBusy\(false\);/);
+  assert.match(chatSource, /const MAX_IMAGES_PER_MESSAGE = 4;/);
+  assert.match(chatSource, /const MAX_VIDEOS_PER_MESSAGE = 1;/);
+  assert.match(chatSource, /const MAX_IMAGE_BYTES = 4 \* 1024 \* 1024;/);
+  assert.match(chatSource, /const MAX_VIDEO_BYTES = 10 \* 1024 \* 1024;/);
+  assert.match(chatSource, /const MAX_VIDEO_SECONDS = 10;/);
+  assert.match(chatSource, /canvas\.toDataURL\("image\/jpeg", IMAGE_QUALITY\)/);
+  assert.match(chatSource, /function buildUserContent\(text, attachments\) \{/);
+  assert.match(chatSource, /type: "image_url", image_url: \{ url: attachment\.dataUrl \}/);
+  assert.match(chatSource, /type: "video_url", video_url: \{ url: attachment\.dataUrl \}/);
+  assert.match(chatSource, /refs\.input\.addEventListener\("paste"/);
+  assert.match(chatSource, /refs\.form\.addEventListener\("drop"/);
+  assert.match(chatSource, /dataTransfer\?\.files/);
+  assert.match(chatSource, /images=\$\{imageCount\} videos=\$\{videoCount\}/);
+  assert.match(chatSource, /media_bytes=\$\{mediaBytes\}/);
+  assert.match(chatSource, /document\.createElement\(attachment\.kind === "video" \? "video" : "img"\)/);
+  assert.doesNotMatch(chatSource, /innerHTML/);
+  assert.doesNotMatch(chatSource, /localStorage\.setItem/);
+  assert.match(chatCss, /\.h3lc-message\.is-user \{/);
+  assert.match(chatCss, /\.h3lc-attachments \{/);
+  assert.match(chatCss, /\.h3lc-message-image \{/);
+  assert.match(chatCss, /\.h3lc-message-video \{/);
+  assert.match(chatCss, /\.h3lc-attachment-remove \{/);
+  assert.match(chatCss, /\.h3lc-composer\.is-dragging \{/);
+  assert.match(chatCss, /\.h3lc-attach svg \{ fill: none; stroke: currentColor;/);
+  assert.match(chatCss, /\.h3lc-thinking \{/);
+  assert.match(chatCss, /\.h3lc-thinking\[aria-pressed="true"\] \{/);
+  assert.match(chatCss, /\.h3lc-thinking:disabled \{/);
+  assert.match(chatCss, /\.h3lc-message-actions \{/);
+  assert.match(chatCss, /\.h3lc-message-action \{/);
+  assert.match(chatCss, /\.h3lc-message-action\[data-copied="true"\] \{/);
+  assert.match(chatCss, /@media \(hover: none\) \{/);
+  assert.match(chatCss, /\.h3lc-reasoning \{/);
+  assert.match(chatCss, /\.h3lc-switch \{/);
+  assert.match(chatCss, /\.h3lc-switch-track \{/);
+  assert.match(chatCss, /\.h3lc-history \{/);
+  assert.match(chatCss, /\.h3lc-history-item\.is-active \{/);
+  assert.match(chatCss, /\.h3lc-history-open strong \{/);
+  assert.match(chatCss, /\.h3lc-history-delete\[data-confirm="true"\] \{/);
+  assert.match(chatCss, /\.h3lc-message-body\.h3lc-markdown \{ white-space: normal; \}/);
+  assert.match(chatCss, /\.h3lc-markdown code \{/);
+  assert.match(chatCss, /\.h3lc-markdown pre \{/);
+  assert.match(chatCss, /\.h3lc-markdown blockquote \{/);
+  assert.match(chatCss, /\.h3lc-markdown table \{/);
+  assert.match(chatCss, /\.h3lc-markdown th,/);
+  assert.match(markdownSource, /export function renderMarkdown\(container, source\) \{/);
+  assert.match(markdownSource, /https\?/);
+  assert.match(markdownSource, /createTextNode/);
+  assert.doesNotMatch(markdownSource, /innerHTML|outerHTML|insertAdjacentHTML/);
+  assert.doesNotMatch(markdownSource, /javascript:/i);
+  assert.match(chatCss, /:root\[data-theme="light"\]/);
+  assert.equal((chatCss.match(/--h3lc-accent: #e8613c;/g) || []).length, 2);
+  assert.doesNotMatch(chatCss, /#6d8dff|#4f74ff|#4f6ef2/);
+  assert.match(chatCss, /\.h3lc-primary \{\s*border-color: transparent;\s*background: var\(--h3lc-accent\);\s*color: #170c09;/);
+  assert.match(chatCss, /\.h3lc-app \{\s*display: grid;\s*grid-template-rows: auto auto auto minmax\(0, 1fr\) auto;\s*height: 100%;\s*min-height: 0;/);
+  assert.doesNotMatch(chatCss, /100dvh/);
+  assert.match(chatCss, /@media \(max-height: 520px\)/);
+  assert.match(chatCss, /\.h3lc-input-wrap textarea \{ max-height: min\(96px, 22vh\); \}/);
+  assert.match(chatCss, /max-height: 40vh;\s*overflow-y: auto;\s*\}/);
+
+  for (const key of [
+    "chat.open", "chat.open_title", "chat.title", "chat.subtitle", "chat.new",
+    "chat.status.checking", "chat.status.connected", "chat.status.unavailable",
+    "chat.status.unconfigured", "chat.phase.loading_model", "chat.phase.generating",
+    "chat.not_configured", "chat.open_writer",
+    "chat.unload", "chat.unloading", "chat.unload_title",
+    "chat.thinking_toggle", "chat.thinking_toggle_hint",
+    "chat.thinking_on_title", "chat.thinking_off_title",
+    "chat.keep_loaded", "chat.keep_loaded_on_title", "chat.keep_loaded_off_title",
+    "chat.copy", "chat.copied", "chat.copy_title", "chat.delete", "chat.delete_title",
+    "chat.stats", "chat.stats_elapsed",
+    "chat.composer_placeholder",
+    "chat.attach", "chat.attach_hint", "chat.attachment_remove",
+    "chat.attachment_image", "chat.attachment_video",
+    "chat.attach.error_type", "chat.attach.error_image_count",
+    "chat.attach.error_video_count", "chat.attach.error_image_size",
+    "chat.attach.error_video_size", "chat.attach.error_video_duration",
+    "chat.attach.error_read", "chat.attach.error_image_decode",
+    "chat.attach.error_video_metadata",
+    "chat.empty_body",
+    "chat.history", "chat.history_title", "chat.close_history",
+    "chat.history_empty", "chat.history_untitled",
+    "chat.history_delete_title", "chat.history_confirm_delete",
+    "chat.history_confirm_delete_title", "chat.history_media_omitted",
+    "errors.EXTERNAL_UNLOAD_FAILED",
+  ]) {
+    assert.ok(en[key], `English locale is missing ${key}`);
+    assert.ok(zhCN[key], `Chinese locale is missing ${key}`);
+  }
+});
+
+test("the chat tab appears only once llama.cpp is configured and activated", () => {
+  const declaration = mainSource.match(/^function syncChatLauncher\([^]*?^}/m);
+  assert.ok(declaration, "syncChatLauncher");
+  const tab = { hidden: true };
+  let workspaceSyncs = 0;
+  const studio = {
+    root: { querySelector: (selector) => (selector === '[data-workspace="chat"]' ? tab : null) },
+    externalServerConfig: null,
+    externalModel: null,
+    externalServerError: null,
+    chatOpen: false,
+  };
+  const context = vm.createContext({
+    console: { log() {}, warn() {} },
+    studio,
+    syncWorkspace: () => { workspaceSyncs += 1; },
+  });
+  vm.runInContext(declaration[0], context);
+
+  context.syncChatLauncher();
+  assert.equal(tab.hidden, true, "unconfigured server hides the chat tab");
+
+  studio.externalServerConfig = { url: "http://127.0.0.1:8080", model: "" };
+  context.syncChatLauncher();
+  assert.equal(tab.hidden, true, "a configured but inactive server hides the chat tab");
+
+  studio.externalModel = { id: "external::http://127.0.0.1:8080::local" };
+  context.syncChatLauncher();
+  assert.equal(tab.hidden, false, "a configured and activated server shows the chat tab");
+
+  studio.chatOpen = true;
+  studio.externalModel = null;
+  studio.externalServerError = { code: "EXTERNAL_SERVER_UNAVAILABLE" };
+  context.syncChatLauncher();
+  assert.equal(tab.hidden, true, "losing activation hides the chat tab");
+  assert.equal(studio.chatOpen, false, "losing activation leaves the chat view");
+  assert.equal(workspaceSyncs, 1);
 });
 
 test("the shell exposes a language selector wired to the i18n preference", () => {
@@ -2001,6 +2386,95 @@ test("long Writer model requests opt out of the ComfyUI 60s fetch timeout",async
   await context.__api.refine({});
   assert.equal(calls.find(call=>call.path==="/h3studio/generate").options.timeoutMs,null);
   assert.equal(calls.find(call=>call.path==="/h3studio/refine").options.timeoutMs,null);
+});
+
+test("Writer window open and close release ComfyUI and llama resources",async()=>{
+  const activationStart=mainSource.indexOf("function activateLlamaChatTab(");
+  const activationEnd=mainSource.indexOf("function postLocaleToChat(",activationStart);
+  const helperStart=mainSource.indexOf("function releaseComfyResources(");
+  const activation=mainSource.slice(activationStart,activationEnd);
+  const helper=mainSource.slice(helperStart,activationStart);
+  const openStart=mainSource.indexOf("function openStudio(");
+  const openEnd=mainSource.indexOf("function closeStudio(",openStart);
+  const openBody=mainSource.slice(openStart,openEnd);
+  const closeStart=mainSource.indexOf("function closeStudio(");
+  const closeEnd=mainSource.indexOf("function syncLauncherLabels(",closeStart);
+  const closeBody=mainSource.slice(closeStart,closeEnd);
+  assert.doesNotMatch(activation,/releaseStudioResources\(|releaseLlamaResources\(/);
+  assert.match(openBody,/releaseStudioResources\("studio-opened"\);/);
+  assert.match(closeBody,/releaseStudioResources\("studio-closed"\);/);
+  assert.match(helper,/freeComfyVram\(\{ freeMemory: true \}\)/);
+  assert.match(helper,/releaseComfyResources\(reason\);[\s\S]*releaseLlamaResources\(reason\)/);
+
+  const h3studioSource=await readFile(new URL("../web/api/h3studio.js",import.meta.url),"utf8");
+  const calls=[];
+  const context=vm.createContext({
+    console,
+    api:{fetchApi:async(path,options)=>{calls.push({path,options});return{ok:true,text:async()=>"{}"};}},
+    readApiResponse:async response=>JSON.parse(await response.text()),
+  });
+  vm.runInContext(h3studioSource.replace(/^import .*$/gm,"").replace(/\bexport\s+/g,"")+"\n;globalThis.__api={freeComfyVram};",context);
+  await context.__api.freeComfyVram();
+  await context.__api.freeComfyVram({freeMemory:true});
+  const freeCalls=calls.filter(call=>call.path==="/free");
+  assert.equal(freeCalls.length,2);
+  assert.deepEqual(JSON.parse(freeCalls[0].options.body),{unload_models:true,free_memory:false});
+  assert.deepEqual(JSON.parse(freeCalls[1].options.body),{unload_models:true,free_memory:true});
+
+  const makeLlamaContext=(config,probe)=>{
+    const probes=[],unloads=[],logs=[];
+    const llamaConsole={
+      log:message=>logs.push(`log ${message}`),
+      warn:message=>logs.push(`warn ${message}`),
+    };
+    const llamaContext=vm.createContext({
+      console:llamaConsole,
+      studio:{externalServerConfig:config},
+      probeExternalServer:async payload=>{probes.push(payload);return probe();},
+      unloadModel:async target=>{unloads.push(target);},
+    });
+    vm.runInContext(helper,llamaContext);
+    return {llamaContext,probes,unloads,logs};
+  };
+
+  const unconfigured=makeLlamaContext(null,()=>({model:null}));
+  await unconfigured.llamaContext.releaseLlamaResources("test");
+  assert.equal(unconfigured.probes.length,0);
+  assert.equal(unconfigured.unloads.length,0);
+  assert.match(unconfigured.logs.join("\n"),/llama cleanup skipped reason=test configured=false/);
+
+  const model={id:"external::http://127.0.0.1:8080::qwen",remote_model:"qwen",lifecycle_supported:true};
+  const online=makeLlamaContext({url:"http://127.0.0.1:8080",model:"qwen"},()=>({model}));
+  await online.llamaContext.releaseLlamaResources("test");
+  assert.equal(JSON.stringify(online.probes),JSON.stringify([{url:"http://127.0.0.1:8080",model:"qwen"}]));
+  assert.equal(JSON.stringify(online.unloads),JSON.stringify([{family:"external",model_id:model.id}]));
+  assert.match(online.logs.join("\n"),/llama server online reason=test[\s\S]*lifecycle_supported=true/);
+  assert.match(online.logs.join("\n"),/llama model unload requested reason=test/);
+
+  const legacy=makeLlamaContext({url:"http://127.0.0.1:8080",model:"qwen"},()=>({model:{...model,lifecycle_supported:false}}));
+  await legacy.llamaContext.releaseLlamaResources("test");
+  assert.equal(legacy.unloads.length,0);
+  assert.match(legacy.logs.join("\n"),/lifecycle_supported=false/);
+
+  const offline=makeLlamaContext({url:"http://127.0.0.1:8080",model:"qwen"},()=>{const error=new Error("unreachable");error.code="EXTERNAL_SERVER_UNAVAILABLE";throw error;});
+  await offline.llamaContext.releaseLlamaResources("test");
+  assert.equal(offline.unloads.length,0);
+  assert.match(offline.logs.join("\n"),/llama cleanup skipped reason=test online=false[\s\S]*code=EXTERNAL_SERVER_UNAVAILABLE/);
+
+  const ambiguous=makeLlamaContext({url:"http://127.0.0.1:8080",model:""},()=>{const error=new Error("ambiguous");error.code="EXTERNAL_MODEL_AMBIGUOUS";throw error;});
+  await ambiguous.llamaContext.releaseLlamaResources("test");
+  assert.equal(ambiguous.unloads.length,0);
+  assert.doesNotMatch(ambiguous.logs.join("\n"),/online=false/);
+  assert.match(ambiguous.logs.join("\n"),/probe_failed=true[\s\S]*code=EXTERNAL_MODEL_AMBIGUOUS/);
+
+  let finishProbe;
+  const busy=makeLlamaContext({url:"http://127.0.0.1:8080",model:"qwen"},()=>new Promise(resolve=>{finishProbe=resolve;}));
+  const first=busy.llamaContext.releaseLlamaResources("first");
+  await busy.llamaContext.releaseLlamaResources("second");
+  assert.equal(busy.probes.length,1);
+  assert.match(busy.logs.join("\n"),/llama cleanup skipped reason=second already_running=true/);
+  finishProbe({model});
+  await first;
 });
 
 test("generation metadata and shared labels follow the active locale", () => {
@@ -2422,4 +2896,39 @@ test("floating launcher labels follow the active locale", () => {
   assert.match(mainSource, /onLocaleChange\(\(\) => syncLauncherLabels\(\)\)/);
   assert.match(mainSource, /document\.body\.appendChild\(launcher\);[\s\S]{0,200}syncLauncherLabels\(document\)/);
   configureI18n({ preference: "en", root: launcher, navigatorLanguage: "en-US" });
+});
+
+
+test("unmeasured VRAM toast warns once per Direct GGUF model", () => {
+  const start = mainSource.indexOf("function warnUnmeasuredVram(");
+  const end = mainSource.indexOf("\nasync function ", start + 1);
+  assert.ok(start >= 0 && end > start, "warnUnmeasuredVram must be a top-level function");
+  const calls = [];
+  const studio = { selectedModel: null, gpuMemory: { free_mb: 6144 }, vramEstimateWarnedModel: null };
+  const warnUnmeasuredVram = new Function(
+    "studio", "msg", "showToast",
+    `${mainSource.slice(start, end)};return warnUnmeasuredVram;`,
+  )(studio, msg, (...args) => calls.push(args));
+  const warn = (model) => {
+    studio.selectedModel = model;
+    warnUnmeasuredVram(studio.selectedModel);
+  };
+
+  warn({ id: "router", family: "ollama" });
+  warn({ id: "measured", family: "gguf", estimated_free_vram_mb: { standard: 9000 } });
+  assert.equal(calls.length, 0);
+
+  warn({ id: "custom-gguf", name: "Custom GGUF", family: "gguf", estimated_free_vram_mb: null });
+  warn({ id: "custom-gguf", name: "Custom GGUF", family: "gguf", estimated_free_vram_mb: null });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0][0], { key: "toast.vram.unmeasured.title", params: {} });
+  assert.deepEqual(calls[0][1], { key: "toast.vram.unmeasured.message", params: { free: "6.0" } });
+  assert.equal(calls[0][2], null);
+  assert.equal(calls[0][3], null);
+  assert.deepEqual(calls[0][4], { dismissOnWorkspaceClick: true });
+
+  studio.vramEstimateWarnedModel = null;
+  studio.gpuMemory = null;
+  warn({ id: "other-gguf", family: "gguf" });
+  assert.deepEqual(calls[1][1], { key: "toast.vram.unmeasured.unknown_free", params: {} });
 });

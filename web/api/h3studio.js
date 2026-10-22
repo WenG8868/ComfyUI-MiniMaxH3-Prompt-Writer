@@ -47,22 +47,26 @@ export const cancel = () => post("/cancel");
 export const unloadModel = (target = {}) => post("/unload", target);
 export const refine = (payload) => post("/refine", payload, noFetchTimeout);
 
-export async function freeComfyVram() {
+export async function freeComfyVram({ freeMemory = false } = {}) {
+  console.log(`[H3 Writer] releasing ComfyUI resources unload_models=true free_memory=${freeMemory}`);
   let response;
   try {
     response = await api.fetchApi("/free", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ unload_models: true, free_memory: false }),
+      body: JSON.stringify({ unload_models: true, free_memory: freeMemory }),
     });
   } catch (error) {
+    console.warn(`[H3 Writer] ComfyUI resource release request failed: ${error?.message || error}`);
     throw networkError(error);
   }
   if (!response.ok) {
+    console.warn(`[H3 Writer] ComfyUI resource release rejected status=${response.status}`);
     const error = new Error(`ComfyUI memory release failed (${response.status})`);
     error.code = "REQUEST_FAILED";
     throw error;
   }
+  console.log(`[H3 Writer] ComfyUI resources released free_memory=${freeMemory}`);
 }
 
 export function uploadMedia(sessionId, mode, files, replaceAssetId = null) {

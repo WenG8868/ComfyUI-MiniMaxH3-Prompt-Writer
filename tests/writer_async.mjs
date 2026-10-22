@@ -202,13 +202,15 @@ function providerController(overrides = {}, dependencies = {}) {
     ...overrides,
   };
   return controller([
-    "externalConnectedContextTokens", "connectConfiguredApiProvider", "disconnectConfiguredApiProvider",
+    "escapeHtml", "externalConnectedContextTokens", "syncExternalServerStatus",
+    "renderApiProviderError", "syncApiProviderError",
+    "connectConfiguredApiProvider", "disconnectConfiguredApiProvider",
     "chooseApiProviderPreset", "refreshApiProviderModels", "connectExternalServer",
     "disconnectExternalServer", "refreshModels",
   ], {
     studio, localStorage: {}, t, msg, showToast() {}, showErrorToast() {},
     DEFAULT_OLLAMA_HOST: "http://127.0.0.1:11434",
-    renderInferenceSettings() {}, syncRuntimeSummary() {},
+    renderInferenceSettings() {}, syncProviderPanelCopy() {}, syncRuntimeSummary() {},
     saveUserPreferences() {}, saveApiProviderConfig() {}, saveExternalServerConfig() {},
     apiProviderModelForSettings: () => null, disconnectApiProvider: async () => {},
     selectModel: (model) => { studio.selectedModel = model; studio.modelSelectionRevision++; },
@@ -378,6 +380,154 @@ test("external connect toast omits the context suffix when tokens are missing or
       assert.equal(await connect({ ...base, ...(server_context_tokens === undefined ? {} : { server_context_tokens }) }), "llama");
     }
     assert.equal(await connect({ ...base, server_context_tokens: 16384 }), "llama · 16K context");
+  } finally {
+    configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  }
+});
+
+test("a failed external connect keeps the typed form and only updates status", async () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  root.innerHTML = `<div data-external-provider-control>
+    <em data-external-server-status data-i18n="providers.status.not_connected"></em>
+    <form data-external-server-form>
+      <input name="url" value="http://127.0.0.1:9000">
+      <input name="model" value="my-model">
+      <input name="api_key" type="password" value="secret">
+      <button type="submit">Connect</button>
+    </form>
+  </div>`;
+  window.document.body.append(root);
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  try {
+    const form = root.querySelector("[data-external-server-form]");
+    const status = root.querySelector("[data-external-server-status]");
+    const submit = form.querySelector('[type="submit"]');
+    const studio = {
+      root, models: [], externalModel: null, externalServerError: null,
+      externalServerConfig: { url: "http://127.0.0.1:9000", model: "my-model" },
+      modelSelectionRevision: 0, externalConnectionAttempt: 0,
+    };
+    let rerenders = 0;
+    let errorToasts = 0;
+    const api = controller(["connectExternalServer", "syncExternalServerStatus"], {
+      studio, t, msg,
+      probeExternalServer: async () => { throw new Error("connection refused"); },
+      showErrorToast() { errorToasts++; },
+      syncProviderPanelCopy() {}, renderInferenceSettings() { rerenders++; },
+    });
+
+    await api.connectExternalServer(form);
+
+    assert.equal(errorToasts, 1);
+    assert.ok(studio.externalServerError instanceof Error);
+    assert.equal(root.querySelector("[data-external-server-form]"), form, "form node must not be rebuilt");
+    assert.equal(form.elements.url.value, "http://127.0.0.1:9000");
+    assert.equal(form.elements.model.value, "my-model");
+    assert.equal(form.elements.api_key.value, "secret");
+    assert.equal(rerenders, 0);
+    assert.equal(status.dataset.i18n, "providers.status.offline");
+    assert.equal(status.textContent, "Offline");
+    assert.equal(submit.disabled, false);
+    assert.equal(submit.dataset.i18n, "providers.external.connect");
+    assert.equal(submit.textContent, "Connect");
+  } finally {
+    configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  }
+});
+
+test("a failed reconnect restores the Reconnect label while keeping the connected model", async () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  root.innerHTML = `<div data-external-provider-control>
+    <em data-external-server-status></em>
+    <form data-external-server-form>
+      <input name="url" value="http://127.0.0.1:9000">
+      <input name="model" value="my-model">
+      <input name="api_key" type="password" value="">
+      <button type="submit">Reconnect</button>
+    </form>
+  </div>`;
+  window.document.body.append(root);
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  try {
+    const form = root.querySelector("[data-external-server-form]");
+    const status = root.querySelector("[data-external-server-status]");
+    const submit = form.querySelector('[type="submit"]');
+    const studio = {
+      root, models: [], externalModel: { id: "external:llama", name: "llama" },
+      externalServerError: null,
+      externalServerConfig: { url: "http://127.0.0.1:9000", model: "my-model" },
+      modelSelectionRevision: 0, externalConnectionAttempt: 0,
+    };
+    const api = controller(["connectExternalServer", "syncExternalServerStatus"], {
+      studio, t, msg,
+      probeExternalServer: async () => { throw new Error("connection refused"); },
+      showErrorToast() {}, syncProviderPanelCopy() {}, renderInferenceSettings() {},
+    });
+
+    await api.connectExternalServer(form);
+
+    assert.equal(form.elements.url.value, "http://127.0.0.1:9000");
+    assert.equal(form.elements.model.value, "my-model");
+    assert.equal(status.dataset.i18n, "providers.status.connected");
+    assert.equal(submit.dataset.i18n, "providers.external.reconnect");
+    assert.equal(submit.textContent, "Reconnect");
+  } finally {
+    configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  }
+});
+
+test("a failed API provider connect keeps the typed form and shows the error in place", async () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  root.innerHTML = `<div data-api-provider-control>
+    <form data-api-provider-form>
+      <input name="base_url" type="url" value="http://127.0.0.1:1234/v1">
+      <input name="api_key" type="password" value="sk-test">
+      <input name="model_id" type="text" value="my-model">
+      <div data-api-provider-error></div>
+      <button type="submit">Connect &amp; test</button>
+    </form>
+  </div>`;
+  window.document.body.append(root);
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  try {
+    const form = root.querySelector("[data-api-provider-form]");
+    const slot = root.querySelector("[data-api-provider-error]");
+    const submit = form.querySelector('[type="submit"]');
+    const oldConfig = { preset: "custom", base_url: "", model_id: "", gemini_reasoning_effort: "minimal" };
+    const studio = {
+      root, models: [], apiProviderConnection: null, apiProviderModels: [],
+      apiProviderConfig: oldConfig, apiProviderError: null,
+      modelSelectionRevision: 0, apiConnectionAttempt: 0,
+    };
+    let rerenders = 0;
+    const api = controller([
+      "escapeHtml", "renderApiProviderError", "syncApiProviderError", "connectConfiguredApiProvider",
+    ], {
+      studio, t, msg,
+      probeApiProvider: async () => { throw new Error("401 unauthorized"); },
+      showErrorToast() {}, syncProviderPanelCopy() {}, renderInferenceSettings() { rerenders++; },
+      saveApiProviderConfig() {}, syncRuntimeSummary() {}, saveUserPreferences() {},
+      selectModel() {}, apiProviderModelForSettings: () => null,
+      disconnectApiProvider: async () => {}, getApiProviderModels: async () => ({}),
+    });
+
+    await api.connectConfiguredApiProvider(form);
+
+    assert.ok(studio.apiProviderError instanceof Error);
+    assert.equal(root.querySelector("[data-api-provider-form]"), form, "form node must not be rebuilt");
+    assert.equal(form.elements.base_url.value, "http://127.0.0.1:1234/v1");
+    assert.equal(form.elements.model_id.value, "my-model");
+    assert.equal(form.elements.api_key.value, "sk-test");
+    assert.equal(rerenders, 0);
+    assert.equal(studio.apiProviderConfig, oldConfig);
+    assert.match(slot.textContent, /401 unauthorized/);
+    assert.ok(slot.querySelector('[data-provider-dynamic="api-error-code"]'));
+    assert.equal(submit.disabled, false);
+    assert.equal(submit.dataset.i18n, "providers.api.connect_test");
+    assert.equal(submit.textContent, "Connect & test");
   } finally {
     configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
   }
