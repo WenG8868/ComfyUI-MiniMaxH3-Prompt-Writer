@@ -68,7 +68,7 @@ localizedError(error, fallbackKey = "errors.UNKNOWN", params = {})
                                // 返回 { code, key, message, technical }
 ```
 
-首屏 markup 先由 `createStudio()` 生成并插入 DOM，随后调用 `configureI18n`（内部翻译已存在子树），再显式调用 `translateDom(root)`；参数来自 `loadUserPreferences(localStorage)?.language || "auto"`。
+首屏 markup 先由 `createStudio()` 生成并插入 DOM，随后调用 `configureI18n`（内部翻译已存在子树），再显式调用 `translateDom(root)`；参数来自 `loadUserPreferences(localStorage)?.language || "auto"`。在生成 markup 之前，`createStudio()` 还会调用一次不带 `root` 的 `configureI18n` 以初始化语言状态；`setup()` 同样先以 `root: null` 初始化，之后再由 `createStudio()` 带 `root` 调用一次。
 
 > `msg()` 只用于切换语言后仍要重绘的文案（toast、状态栏、浮动媒体面板状态）。一次性渲染且不会在切换后复用的文案直接调用 `t()`，不要保存描述符。
 

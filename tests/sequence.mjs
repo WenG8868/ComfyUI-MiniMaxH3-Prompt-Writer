@@ -91,6 +91,7 @@ test("real DOM Add/Delete, shell sync and repeated workspace switches preserve D
   root.innerHTML=`<div data-workspace="video"></div><div data-video-modes></div><div data-music-inputs></div><span data-output-label></span><span data-output-mobile-label></span><textarea data-output>Single prompt</textarea><span data-copy-label></span><span data-refine-media-note></span><span data-refine-title></span><span data-refine-helper></span><textarea data-refine-instruction></textarea><div class="h3ps-workspace"><div data-video-inputs><div class="h3ps-section-actions"></div><div data-h3ps-media><div tabindex="0" data-asset-id="a"></div><div tabindex="0" data-asset-id="b"></div></div></div></div><button data-generate><span data-generate-label>Generate prompt</span></button>`;
   const studio={root,mode:"T2VA"};
   const context=vm.createContext({studio,t,rememberReferenceInsertTarget(){},toggleLyricsRefine(){},setMusicSystemPromptExpanded(){},syncModeAvailability(){},msg:(key,params)=>({key,params})});
+  vm.runInContext(main.match(/^function syncGenerateLabel\(\)[^]*?^}/m)[0],context);
   vm.runInContext(main.match(/^function syncWorkspace\([^]*?^}/m)[0],context);
   const errors=[]; let busy=false, copied="";
   const assets=[{id:"a",filename:"portrait.png",type:"image",reference:"<Picture 7>"},{id:"b",filename:"room.png",type:"image",reference:"<Picture 8>"}];

@@ -9,7 +9,9 @@ import { configureI18n, localizedError, messageText, msg, setLanguagePreference,
 import { writeToastContent } from "../web/toast.js";
 import { writeStatusContent } from "../web/status.js";
 import { settingsMarkup, generateModelSummaryMarkup } from "../web/settings.js";
-import { AUTO_VRAM_TOOLTIP, autoVramControlMarkup } from "../web/vram_handoff.js";
+import { messages as en } from "../web/locales/en.js";
+import { messages as zhCN } from "../web/locales/zh-CN.js";
+import { autoVramControlMarkup } from "../web/vram_handoff.js";
 import './media_visual.mjs';
 import './sequence.mjs';
 import "./writer_async.mjs";
@@ -82,6 +84,7 @@ const {
   resetModeDraft,
 } = await import(`data:text/javascript;base64,${stateEncoded}`);
 const mainSource = await readFile(new URL("../web/main.js", import.meta.url), "utf8");
+const vramHandoffSource = await readFile(new URL("../web/vram_handoff.js", import.meta.url), "utf8");
 const composerSource = await readFile(new URL("../web/media_composer.js", import.meta.url), "utf8");
 const editorSource = await readFile(new URL("../web/media_editor.js", import.meta.url), "utf8");
 const floatingSource = await readFile(new URL("../web/floating_media.js", import.meta.url), "utf8");
@@ -388,7 +391,7 @@ test("Auto VRAM markup is absent outside ComfyUI and carries the approved toolti
   const markup = autoVramControlMarkup(true);
   assert.match(markup, /data-i18n="vram\.auto_label">Auto VRAM<\/span>/);
   assert.match(markup, /data-i18n-title="vram\.auto_tooltip"/);
-  assert.match(markup, new RegExp(AUTO_VRAM_TOOLTIP.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(markup, new RegExp(en["vram.auto_tooltip"].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
 test("replacing a persistent media listener prevents duplicate dispatch", () => {
@@ -1068,7 +1071,8 @@ test("external connection toast falls back when context tokens are absent or non
 
 test("External llama.cpp offers capability-driven two-way Auto VRAM", () => {
   assert.match(mainSource, /\["gguf", "external"\]\.includes\(model\?\.family\)/);
-  assert.match(AUTO_VRAM_TOOLTIP, /lifecycle-capable External llama\.cpp routers/);
+  assert.match(en["vram.auto_tooltip"], /lifecycle-capable External llama\.cpp routers/);
+  assert.doesNotMatch(vramHandoffSource, /AUTO_VRAM_TOOLTIP/);
 
   const queueHandoffStart = mainSource.indexOf("async function unloadWriterModelsBeforeQueue(signal)");
   const queueHandoffEnd = mainSource.indexOf("\nfunction showVramHandoffQueueError", queueHandoffStart);
@@ -1912,7 +1916,7 @@ test("startup generation state has no legacy preview dependency",()=>{
 test("locale refresh never fetches or overwrites System Prompt editors", async () => {
   const start = mainSource.indexOf("async function syncSystemPromptEditor(");
   const end = mainSource.indexOf("function syncSystemPromptEditors(", start);
-  const node = (value = "") => ({ disabled: false, value, textContent: "", hidden: false });
+  const node = (value = "") => ({ disabled: false, value, textContent: "", hidden: false, dataset: {} });
   const fields = () => {
     const textarea = node();
     const status = node();
@@ -1928,8 +1932,15 @@ test("locale refresh never fetches or overwrites System Prompt editors", async (
     ]);
     return { textarea, status, summaryStatus, reset, count, root: { querySelector: selector => map.get(selector) } };
   };
+  const statusStart = mainSource.indexOf("function setSystemPromptStatus(");
+  const statusEnd = mainSource.indexOf("\nfunction ", statusStart + 1);
+  assert.ok(statusStart >= 0 && statusEnd > statusStart, "setSystemPromptStatus must be a top-level function");
+  const setSystemPromptStatus = new Function(
+    "t",
+    mainSource.slice(statusStart, statusEnd) + ";return setSystemPromptStatus;",
+  )(t);
   const build = () => new Function(
-    "studio", "getSystemPrompt", "showToast", "resizeSystemPromptEditor", "syncMusicSystemPromptSummary", "t",
+    "studio", "getSystemPrompt", "showToast", "resizeSystemPromptEditor", "syncMusicSystemPromptSummary", "t", "setSystemPromptStatus",
     mainSource.slice(start, end) + ";return syncSystemPromptEditor;",
   );
 
@@ -1944,6 +1955,7 @@ test("locale refresh never fetches or overwrites System Prompt editors", async (
     () => {},
     () => {},
     t,
+    setSystemPromptStatus,
   );
   await refreshingSync("standard");
   assert.equal(refreshing.textarea.value, "keep me");
@@ -1961,6 +1973,7 @@ test("locale refresh never fetches or overwrites System Prompt editors", async (
     () => {},
     () => {},
     t,
+    setSystemPromptStatus,
   );
   await fetchedSync("standard");
   assert.equal(calls, 1);
@@ -2222,4 +2235,191 @@ test("error toasts keep a localized summary and the original English detail", ()
   assert.deepEqual(calls[1][1], { key: "errors.UNKNOWN", params: {} });
   assert.match(calls[1][2], /Backend exploded/);
   configureI18n({ preference: "en", root });
+});
+
+test("busy generation label stays on the cancel key across locale switches", () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  root.innerHTML = `<button type="button" data-generate><span class="h3ps-spinner"></span><span data-generate-label data-i18n="generation.cancel">Cancel</span></button>`;
+  window.document.body.append(root);
+  const studio = { root, mode: "T2VA", requestBusy: true };
+  const start = mainSource.indexOf("function syncGenerateLabel(");
+  const end = mainSource.indexOf("\nfunction ", start + 1);
+  assert.ok(start >= 0 && end > start, "syncGenerateLabel must be a top-level function");
+  const syncGenerateLabel = new Function(
+    "studio", "t",
+    `${mainSource.slice(start, end)};return syncGenerateLabel;`,
+  )(studio, t);
+
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  syncGenerateLabel();
+  const label = root.querySelector("[data-generate-label]");
+  assert.equal(label.textContent, "Cancel");
+  configureI18n({ preference: "zh-CN", root });
+  syncGenerateLabel();
+  assert.equal(label.textContent, "取消");
+  assert.equal(label.dataset.i18n, "generation.cancel");
+
+  studio.requestBusy = false;
+  syncGenerateLabel();
+  assert.equal(label.textContent, "生成提示词");
+  assert.equal(label.dataset.i18n, undefined);
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+});
+
+test("error toasts never send raw backend messages or codes as visible text", () => {
+  const systemPromptStart = mainSource.indexOf("async function syncSystemPromptEditor(");
+  const systemPromptEnd = mainSource.indexOf("\nasync function ", systemPromptStart + 1);
+  assert.ok(systemPromptStart >= 0 && systemPromptEnd > systemPromptStart);
+  const systemPromptSource = mainSource.slice(systemPromptStart, systemPromptEnd);
+  assert.match(systemPromptSource, /showErrorToast\("toast\.system_prompt\.failed\.title", error\)/);
+  assert.doesNotMatch(systemPromptSource, /showToast\(error\.(?:code|message)/);
+  assert.equal(en["toast.system_prompt.failed.title"], "System Prompt unavailable");
+
+  const queueStart = mainSource.indexOf("function showVramHandoffQueueError(");
+  const queueEnd = mainSource.indexOf("\nfunction ", queueStart + 1);
+  assert.ok(queueStart >= 0 && queueEnd > queueStart);
+  const queueSource = mainSource.slice(queueStart, queueEnd);
+  assert.match(queueSource, /const localized = localizedError\(error, "errors\.UNKNOWN"\)/);
+  assert.match(queueSource, /console\.error\([^\n]*error\?\.code/);
+  assert.match(queueSource, /showToast\(msg\("toast\.vram\.queue\.title"\), localized\.message, localized\.technical\)/);
+  assert.match(queueSource, /detail:\s*localized\.message/);
+  assert.doesNotMatch(queueSource, /error\.message \|\|/);
+
+  const retryStart = mainSource.indexOf("function showVramRetry(");
+  const retryEnd = mainSource.indexOf("\nasync function ", retryStart + 1);
+  assert.ok(retryStart >= 0 && retryEnd > retryStart);
+  const retrySource = mainSource.slice(retryStart, retryEnd);
+  assert.match(retrySource, /: localizedError\(error, "errors\.UNKNOWN"\)\.message/);
+  assert.doesNotMatch(retrySource, /: error\.message/);
+
+  const projectorStart = mainSource.indexOf("function renderProjectorChoice(");
+  const projectorEnd = mainSource.indexOf("\nfunction renderInferenceSettings(", projectorStart + 1);
+  assert.ok(projectorStart >= 0 && projectorEnd > projectorStart);
+  const projectorSource = mainSource.slice(projectorStart, projectorEnd);
+  assert.match(projectorSource, /catch \(error\) \{ showErrorToast\("models\.projector_selection", error\); \}/);
+  assert.doesNotMatch(projectorSource, /showToast\(msg\("models\.projector_selection"\), error\.message\)/);
+
+  const mediaStart = mainSource.indexOf("async function openFloatingMedia(");
+  const mediaEnd = mainSource.indexOf("\nfunction focusAvailableControl(", mediaStart + 1);
+  assert.ok(mediaStart >= 0 && mediaEnd > mediaStart);
+  const mediaSource = mainSource.slice(mediaStart, mediaEnd);
+  assert.match(mediaSource, /catch \(error\) \{ showErrorToast\("toast\.media_panel\.unavailable\.title", error\); \}/);
+  assert.doesNotMatch(mediaSource, /showToast\(msg\("toast\.media_panel\.unavailable\.title"\), error\.message\)/);
+});
+
+test("system prompt status text and i18n marker stay aligned", () => {
+  const window = new Window();
+  const status = window.document.createElement("em");
+  const summaryStatus = window.document.createElement("em");
+  const start = mainSource.indexOf("function setSystemPromptStatus(");
+  const end = mainSource.indexOf("\nfunction ", start + 1);
+  assert.ok(start >= 0 && end > start, "setSystemPromptStatus must be a top-level function");
+  const setSystemPromptStatus = new Function(
+    "t",
+    `${mainSource.slice(start, end)};return setSystemPromptStatus;`,
+  )(t);
+
+  configureI18n({ preference: "en", root: status, navigatorLanguage: "en-US" });
+  setSystemPromptStatus(status, true);
+  setSystemPromptStatus(summaryStatus, false);
+  assert.equal(status.textContent, "Custom");
+  assert.equal(status.dataset.i18n, "settings.custom");
+  assert.equal(summaryStatus.textContent, "Default");
+  assert.equal(summaryStatus.dataset.i18n, "system_prompt.status");
+
+  configureI18n({ preference: "zh-CN", root: status });
+  setSystemPromptStatus(status, true);
+  setSystemPromptStatus(summaryStatus, false);
+  assert.equal(status.textContent, "自定义");
+  assert.equal(summaryStatus.textContent, "默认");
+  configureI18n({ preference: "en", root: status, navigatorLanguage: "en-US" });
+});
+
+test("lyrics restore toast and model guidance use dictionary descriptors", () => {
+  configureI18n({ preference: "en", root: new Window().document.createElement("div"), navigatorLanguage: "en-US" });
+  assert.equal(en["toast.lyrics.previous_restored.title"], "Previous Lyrics restored");
+  assert.equal(en["toast.lyrics.generated_removed.title"], "Generated Lyrics removed");
+  assert.equal(en["toast.lyrics.restore.message"], "The AI Lyrics change was discarded.");
+  assert.equal(en["workspace.select_ready_model"], "Select a ready prompt model in Settings.");
+
+  const restoreStart = mainSource.indexOf('root.querySelector("[data-lyrics-refine-restore]").addEventListener("click"');
+  const restoreEnd = mainSource.indexOf('root.querySelector("[data-refine-restore]")', restoreStart);
+  assert.ok(restoreStart >= 0 && restoreEnd > restoreStart);
+  const restoreSource = mainSource.slice(restoreStart, restoreEnd);
+  assert.match(restoreSource, /previousLyrics\.trim\(\) \? msg\("toast\.lyrics\.previous_restored\.title"\) : msg\("toast\.lyrics\.generated_removed\.title"\)/);
+  assert.match(restoreSource, /msg\("toast\.lyrics\.restore\.message"\)/);
+  assert.doesNotMatch(restoreSource, /Previous Lyrics restored|Generated Lyrics removed|The AI Lyrics change was discarded/);
+  assert.match(mainSource, /new Error\(t\("workspace\.select_ready_model"\)\)/);
+});
+
+test("locale switches preserve inputs, outputs, node identity, and drafts", () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  root.innerHTML = `
+    <span data-i18n="workspace.creative_brief">Creative brief</span>
+    <textarea data-video-brief>video brief</textarea>
+    <textarea data-music-lyrics>music lyrics</textarea>
+    <textarea data-output>generated output</textarea>
+    <video data-media-node></video>`;
+  window.document.body.append(root);
+  const brief = root.querySelector("[data-video-brief]");
+  const lyrics = root.querySelector("[data-music-lyrics]");
+  const output = root.querySelector("[data-output]");
+  const mediaNode = root.querySelector("[data-media-node]");
+  const draft = { brief: "video brief", lyrics: "music lyrics", prompt: "generated output" };
+  const studio = { draft, assets: [mediaNode] };
+
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  assert.equal(root.querySelector("[data-i18n]").textContent, "Creative brief");
+
+  setLanguagePreference("zh-CN");
+  assert.equal(root.querySelector("[data-i18n]").textContent, zhCN["workspace.creative_brief"]);
+  assert.equal(brief.value, "video brief");
+  assert.equal(lyrics.value, "music lyrics");
+  assert.equal(output.value, "generated output");
+  assert.equal(root.querySelector("[data-video-brief]"), brief);
+  assert.equal(root.querySelector("[data-output]"), output);
+  assert.equal(root.querySelector("[data-media-node]"), mediaNode);
+  assert.equal(studio.draft, draft);
+  assert.equal(studio.assets[0], mediaNode);
+  assert.deepEqual(draft, { brief: "video brief", lyrics: "music lyrics", prompt: "generated output" });
+
+  setLanguagePreference("en");
+  assert.equal(root.querySelector("[data-i18n]").textContent, "Creative brief");
+  assert.equal(brief.value, "video brief");
+  assert.equal(lyrics.value, "music lyrics");
+  assert.equal(output.value, "generated output");
+  assert.equal(root.querySelector("[data-music-lyrics]"), lyrics);
+});
+
+test("floating launcher labels follow the active locale", () => {
+  const window = new Window();
+  const launcher = window.document.createElement("button");
+  launcher.dataset.h3psLauncher = "true";
+  launcher.innerHTML = `<img src="launcher.svg" alt="">`;
+  window.document.body.append(launcher);
+  const start = mainSource.indexOf("function syncLauncherLabels(");
+  const end = mainSource.indexOf("\nfunction ", start + 1);
+  assert.ok(start >= 0 && end > start, "syncLauncherLabels must be a top-level function");
+  const syncLauncherLabels = new Function(
+    "t",
+    `${mainSource.slice(start, end)};return syncLauncherLabels;`,
+  )(t);
+
+  configureI18n({ preference: "en", root: launcher, navigatorLanguage: "en-US" });
+  syncLauncherLabels(window.document);
+  assert.equal(launcher.title, en["launcher.open_title"]);
+  assert.equal(launcher.getAttribute("aria-label"), en["launcher.open"]);
+  assert.equal(launcher.querySelector("img").alt, en["launcher.alt"]);
+
+  setLanguagePreference("zh-CN");
+  syncLauncherLabels(window.document);
+  assert.equal(launcher.title, zhCN["launcher.open_title"]);
+  assert.equal(launcher.getAttribute("aria-label"), zhCN["launcher.open"]);
+  assert.equal(launcher.querySelector("img").alt, zhCN["launcher.alt"]);
+  assert.notEqual(launcher.title, en["launcher.open_title"]);
+  assert.match(mainSource, /onLocaleChange\(\(\) => syncLauncherLabels\(\)\)/);
+  assert.match(mainSource, /document\.body\.appendChild\(launcher\);[\s\S]{0,200}syncLauncherLabels\(document\)/);
+  configureI18n({ preference: "en", root: launcher, navigatorLanguage: "en-US" });
 });

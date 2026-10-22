@@ -264,6 +264,13 @@ function syncMusicSystemPromptSummary() {
     : t("system_prompt.status");
 }
 
+function setSystemPromptStatus(element, custom) {
+  if (!element) return;
+  const key = custom ? "settings.custom" : "system_prompt.status";
+  element.dataset.i18n = key;
+  element.textContent = t(key);
+}
+
 async function syncSystemPromptEditor(profile) {
   if (!studio) return;
   const textarea = studio.root.querySelector(`[data-system-prompt="${profile}"]`);
@@ -283,7 +290,7 @@ async function syncSystemPromptEditor(profile) {
       textarea.value = "";
       if (status) status.textContent = t("system_prompt.unavailable");
       if (summaryStatus) summaryStatus.textContent = t("system_prompt.unavailable");
-      showToast(error.code || "System Prompt unavailable", error.message, error.details);
+      showErrorToast("toast.system_prompt.failed.title", error);
       return;
     }
   }
@@ -293,8 +300,8 @@ async function syncSystemPromptEditor(profile) {
     textarea.disabled = false;
     resizeSystemPromptEditor(textarea);
   }
-  if (status) status.textContent = custom ? t("settings.custom") : t("system_prompt.status");
-  if (summaryStatus) summaryStatus.textContent = custom ? t("settings.custom") : t("system_prompt.status");
+  setSystemPromptStatus(status, custom);
+  setSystemPromptStatus(summaryStatus, custom);
   reset.hidden = !custom;
   const text = custom ? studio.customSystemPrompts[profile] : studio.systemPromptDefaults[profile] || "";
   count.textContent = `${text.length.toLocaleString()} / 8,000`;
@@ -1059,6 +1066,17 @@ function restoreModeDraft(mode) {
   syncModifiedState();
 }
 
+function syncGenerateLabel() {
+  if (!studio) return;
+  const label = studio.root.querySelector("[data-generate-label]");
+  if (!label) return;
+  // While a request runs, generationButtonMarkup + translateDom own the cancel
+  // label and its data-i18n marker; rewriting them here desynchronizes the two.
+  if (studio.requestBusy) return;
+  delete label.dataset.i18n;
+  label.textContent = studio.mode === "Music3" ? t("generation.generate_caption") : t("generation.generate_prompt");
+}
+
 function syncWorkspace() {
   if (!studio) return;
   const music = studio.mode === "Music3";
@@ -1076,7 +1094,7 @@ function syncWorkspace() {
   studio.root.querySelector("[data-output-mobile-label]").textContent = outputLabel;
   studio.root.querySelector("[data-output]").setAttribute("aria-label", outputLabel);
   studio.root.querySelector("[data-copy-label]").textContent = music ? t("workspace.copy_caption") : t("workspace.copy_prompt");
-  studio.root.querySelector("[data-generate-label]").textContent = music ? t("generation.generate_caption") : t("generation.generate_prompt");
+  syncGenerateLabel();
   studio.root.querySelector("[data-refine-media-note]").textContent = music ? t("workspace.lyrics_stay_separate") : t("workspace.no_media_reupload");
   studio.root.querySelector("[data-refine-title]").textContent = music ? t("workspace.refine_caption") : t("workspace.refine_prompt");
   studio.root.querySelector("[data-refine-helper]").textContent = music ? t("workspace.describe_musical_change") : t("workspace.describe_change");
@@ -1320,11 +1338,12 @@ async function unloadWriterModelsBeforeQueue(signal) {
 }
 
 function showVramHandoffQueueError(error) {
-  const message = error.message || "Prompt Writer could not release its local model.";
+  console.error(`[H3 Writer] error code=${error?.code || "UNKNOWN"}`, error);
+  const localized = localizedError(error, "errors.UNKNOWN");
   if (studio?.root.classList.contains("is-open")) {
-    showToast(msg("toast.vram.queue.title"), message, error.details);
+    showToast(msg("toast.vram.queue.title"), localized.message, localized.technical);
   } else {
-    app.extensionManager?.toast?.add({severity:"warn", summary:t("toast.vram.queue.comfy_summary"), detail:message, life:8000});
+    app.extensionManager?.toast?.add({severity:"warn", summary:t("toast.vram.queue.comfy_summary"), detail:localized.message, life:8000});
   }
 }
 
@@ -1440,7 +1459,7 @@ function showVramRetry(error, retry) {
   const requiredGb = Number(error.details?.required_free_mb) / 1024;
   const message = Number.isFinite(freeGb) && Number.isFinite(requiredGb)
     ? msg("toast.vram.retry.message", { free: freeGb.toFixed(1), required: requiredGb.toFixed(1) })
-    : error.message;
+    : localizedError(error, "errors.UNKNOWN").message;
   const action = !HOST_CAPABILITIES.comfyMemory || writerAutoVramApplies()
     ? null
     : { label: msg("toast.vram.retry.action"), onClick: () => releaseComfyVram({ retry, requiredFreeMb: error.details?.required_free_mb }) };
@@ -2199,7 +2218,7 @@ function renderProjectorChoice(model) {
       localStorage.setItem("h3-writer-projectors", JSON.stringify(saved));
       studio.models = studio.models.map(m => m.id === model.id ? result.model : m);
       selectModel(result.model);
-    } catch (error) { showToast(msg("models.projector_selection"), error.message); }
+    } catch (error) { showErrorToast("models.projector_selection", error); }
     finally { if (select.isConnected) select.disabled = false; }
   });
 }
@@ -3780,8 +3799,8 @@ function createStudio() {
     const custom = Object.hasOwn(studio.customSystemPrompts, profile);
     const status = root.querySelector(`[data-system-prompt-status="${profile}"]`);
     const summaryStatus = root.querySelector(`[data-system-prompt-summary-status="${profile}"]`);
-    if (status) status.textContent = custom ? "Custom" : "Default";
-    if (summaryStatus) summaryStatus.textContent = custom ? "Custom" : "Default";
+    setSystemPromptStatus(status, custom);
+    setSystemPromptStatus(summaryStatus, custom);
     root.querySelector(`[data-system-prompt-reset="${profile}"]`).hidden = !custom;
     root.querySelector(`[data-system-prompt-count="${profile}"]`).textContent = `${textarea.value.length.toLocaleString()} / 8,000`;
     resizeSystemPromptEditor(textarea);
@@ -3978,8 +3997,8 @@ function createStudio() {
     updateMusicLyricsCount();
     saveCurrentModeDraft();
     showToast(
-      previousLyrics.trim() ? "Previous Lyrics restored" : "Generated Lyrics removed",
-      "The AI Lyrics change was discarded.",
+      previousLyrics.trim() ? msg("toast.lyrics.previous_restored.title") : msg("toast.lyrics.generated_removed.title"),
+      msg("toast.lyrics.restore.message"),
     );
   });
   root.querySelector("[data-refine-restore]").addEventListener("click", () => {
@@ -4052,7 +4071,7 @@ function createStudio() {
     root, icon, storage: localStorage, assets: () => studio.assets,
     isBusy: () => studio.requestBusy,
     snapshot: () => {
-      if (!studio.selectedModel?.runtime_ready) throw new Error("Select a ready prompt model in Settings.");
+      if (!studio.selectedModel?.runtime_ready) throw new Error(t("workspace.select_ready_model"));
       studio.modelSelectionRevision = (studio.modelSelectionRevision || 0) + 1;
       return buildGeneratePayload(studio, { creativeBrief: "", seed: newGenerationSeed() });
     },
@@ -4160,7 +4179,7 @@ async function openFloatingMedia() {
     if (!hasMedia()) { openStudio(); showToast(msg("media.add_first"), ""); return; }
     if (closeStudio() === false) return;
     current.floatingMedia.open();
-  } catch (error) { showToast(msg("toast.media_panel.unavailable.title"), error.message); }
+  } catch (error) { showErrorToast("toast.media_panel.unavailable.title", error); }
 }
 
 function focusAvailableControl(element) {
@@ -4233,6 +4252,15 @@ function closeStudio() {
   studioReturnFocus = null;
 }
 
+function syncLauncherLabels(doc = document) {
+  const launcher = doc.querySelector("[data-h3ps-launcher]");
+  if (!launcher) return;
+  launcher.setAttribute("aria-label", t("launcher.open"));
+  launcher.title = t("launcher.open_title");
+  const image = launcher.querySelector("img");
+  if (image) image.alt = t("launcher.alt");
+}
+
 function installLauncher() {
   if (!HOST_CAPABILITIES.windowed) return;
   const existingLauncher = document.querySelector("[data-h3ps-launcher]");
@@ -4244,11 +4272,10 @@ function installLauncher() {
   launcher.className = "h3ps-floating-launcher";
   launcher.dataset.h3psLauncher = "true";
   launcher.dataset.h3psLauncherVersion = LAUNCHER_SCHEMA_VERSION;
-  launcher.setAttribute("aria-label", t("launcher.open"));
-  launcher.title = t("launcher.open_title");
   const launcherIcon = new URL("./assets/h3-prompt-writer-launcher.svg", import.meta.url).href;
-  launcher.innerHTML = `<img src="${launcherIcon}" alt="${t("launcher.alt")}">`;
+  launcher.innerHTML = `<img src="${launcherIcon}" alt="">`;
   document.body.appendChild(launcher);
+  syncLauncherLabels(document);
 
   const positionKey = "h3ps-launcher-position";
   const edgeGap = 10;
@@ -4404,13 +4431,6 @@ app.registerExtension({
       onQueueHandoffEnd: () => vramHandoffCoordinator.finishQueueHandoff(),
     });
     installLauncher();
-    onLocaleChange(() => {
-      const launcher = document.querySelector("[data-h3ps-launcher]");
-      if (!launcher) return;
-      launcher.setAttribute("aria-label", t("launcher.open"));
-      launcher.title = t("launcher.open_title");
-      const image = launcher.querySelector("img");
-      if (image) image.alt = t("launcher.alt");
-    });
+    onLocaleChange(() => syncLauncherLabels());
   },
 });
