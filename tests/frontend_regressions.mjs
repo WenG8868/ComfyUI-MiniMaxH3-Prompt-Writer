@@ -83,6 +83,8 @@ const {
 } = await import(`data:text/javascript;base64,${stateEncoded}`);
 const mainSource = await readFile(new URL("../web/main.js", import.meta.url), "utf8");
 const composerSource = await readFile(new URL("../web/media_composer.js", import.meta.url), "utf8");
+const editorSource = await readFile(new URL("../web/media_editor.js", import.meta.url), "utf8");
+const floatingSource = await readFile(new URL("../web/floating_media.js", import.meta.url), "utf8");
 const styleModules = [
   "tokens",
   "themes/dark",
@@ -969,13 +971,13 @@ test("Media Composer creates an independent Picture from prepared visual sources
   assert.match(composerSource, /ctx\.drawImage\(bitmap,it\.x,it\.y,it\.w,it\.h\)/);
   assert.doesNotMatch(composerSource, /\bCover\b|background selector|transform:\s*scale/);
   assert.match(composerSource, /\["auto", "Auto"\]/);
-  assert.match(composerSource, /data-value="auto">Auto<\/button><button type="button" data-value="2">2 cols<\/button><button type="button" data-value="3">3 cols<\/button><button type="button" data-value="grid">Grid<\/button>/);
+  assert.match(composerSource, /data-value="auto" data-i18n="common\.auto">\$\{t\("common\.auto"\)\}<\/button><button type="button" data-value="2" data-i18n="media\.composer\.cols2">\$\{t\("media\.composer\.cols2"\)\}<\/button><button type="button" data-value="3" data-i18n="media\.composer\.cols3">\$\{t\("media\.composer\.cols3"\)\}<\/button><button type="button" data-value="grid" data-i18n="media\.composer\.grid">\$\{t\("media\.composer\.grid"\)\}<\/button>/);
   assert.match(composerSource, /if\(d\.type==="resize"\)[\s\S]{0,240}d\.it\.weight=/);
   assert.match(composerSource, /if \(r\) \{ W=Math\.max\(reqW, reqH\*r\)/);
   assert.match(composerSource, /drawOutput\(canvas\.getContext\("2d"\),r\.W,r\.H,false\)/);
-  assert.match(composerSource, /data-copy[^>]*aria-label="Copy PNG">\$\{i\("copy", 14\)\}<\/button>/);
+  assert.match(composerSource, /data-copy[^>]*aria-label="\$\{t\("media\.composer\.copy_png"\)\}"[^>]*data-i18n-aria-label="media\.composer\.copy_png">\$\{i\("copy", 14\)\}<\/button>/);
   assert.match(composerSource, /ClipboardItem\(\{"image\/png":png\}\)/);
-  assert.match(composerSource, /data-download[^>]*>\$\{i\("download", 13\)\}Download<\/button>/);
+  assert.match(composerSource, /data-download>\$\{i\("download", 13\)\}<span data-i18n="media\.composer\.download">\$\{t\("media\.composer\.download"\)\}<\/span><\/button>/);
   assert.match(composerSource, /URL\.createObjectURL\(payload\.blob\)/);
   assert.doesNotMatch(composerSource, /showReferenceLabels|referenceLabelRect|drawReferenceLabels|data-reference-labels/);
   assert.doesNotMatch(composerSource, /data-label-layer/);
@@ -985,6 +987,17 @@ test("Media Composer creates an independent Picture from prepared visual sources
   assert.match(styleSources.composer, /caption-inline textarea\{[^}]*color:var\(--h3ps-canvas-text\)/);
   assert.match(styleSources.composer, /\.h3ps-cmp-source\{cursor:grab/);
   assert.doesNotMatch(styleSources.composer, /\.h3ps-cmp-source\{height:104px/);
+});
+
+test("media tools translate their own subtrees and refresh dynamic labels", () => {
+  for (const source of [composerSource, editorSource, floatingSource]) {
+    assert.match(source, /import \{[^}]*onLocaleChange[^}]*\} from "\.\/i18n\.js"/);
+    assert.match(source, /translateDom\(/);
+    assert.match(source, /offLocale\(\)/);
+  }
+  assert.match(composerSource, /data-i18n="media\.composer\.title"/);
+  assert.match(editorSource, /data-i18n="media\.editor\.title"/);
+  assert.match(floatingSource, /data-i18n="media\.float\.title"/);
 });
 
 test("VRAM retry waits for the required free-memory target", () => {
