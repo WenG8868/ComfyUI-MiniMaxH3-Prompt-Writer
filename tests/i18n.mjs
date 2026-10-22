@@ -53,7 +53,16 @@ test("auto resolves ComfyUI locale first, then navigator language", () => {
   assert.equal(resolveLocale("auto", { app: comfy(""), navigatorLanguage: "zh-Hans" }), "zh-CN");
   assert.equal(resolveLocale("auto", { navigatorLanguage: "de-DE" }), "en");
   const throwing = { ui: { settings: { getSettingValue: () => { throw new Error("not available"); } } } };
-  assert.equal(resolveLocale("auto", { app: throwing, navigatorLanguage: "zh-Hant" }), "zh-CN");
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(" "));
+  try {
+    assert.equal(resolveLocale("auto", { app: throwing, navigatorLanguage: "zh-Hant" }), "zh-CN");
+    assert.equal(resolveLocale("auto", { app: throwing, navigatorLanguage: "zh-Hant" }), "zh-CN");
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(warnings.filter((line) => line.includes("Comfy.Locale")).length, 1);
   assert.equal(resolveLocale("en", { app: comfy("zh-CN") }), "en");
   assert.equal(resolveLocale("zh-CN", { app: comfy("en-US") }), "zh-CN");
 });
@@ -71,6 +80,7 @@ test("t interpolates parameters and falls back predictably", () => {
   assert.equal(lookupTranslation("zh-CN", "missing.key", { en: {}, "zh-CN": {} }), "missing.key");
   assert.equal(hasTranslation("common.cancel"), true);
   assert.equal(hasTranslation("missing.key"), false);
+  assert.equal(t("common.cancel", null), "取消");
   assert.equal(messageText(msg("common.cancel")), "取消");
   assert.equal(messageText("raw backend text"), "raw backend text");
   assert.equal(messageText(null), "");
@@ -78,13 +88,15 @@ test("t interpolates parameters and falls back predictably", () => {
 
 test("setLanguagePreference updates state, document lang, and notifies once", () => {
   let calls = 0;
-  const unsubscribe = onLocaleChange(() => { calls += 1; });
+  let notifiedLocale = "";
+  const unsubscribe = onLocaleChange((locale) => { calls += 1; notifiedLocale = locale; });
   configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
   assert.equal(setLanguagePreference("zh-CN"), "zh-CN");
   assert.equal(getLocale(), "zh-CN");
   assert.equal(getLanguagePreference(), "zh-CN");
   assert.equal(window.document.documentElement.lang, "zh-CN");
   assert.equal(calls, 1);
+  assert.equal(notifiedLocale, "zh-CN");
   unsubscribe();
   setLanguagePreference("en");
   assert.equal(calls, 1);
@@ -98,6 +110,7 @@ test("translateDom translates text and attributes but never values or raw output
     <input data-i18n="common.cancel" data-i18n-placeholder="common.language" value="keep me">
     <textarea data-i18n="common.close" data-i18n-placeholder="common.language">keep text</textarea>
     <select data-i18n="common.close"><option>fixed</option></select>
+    <span data-i18n-skip data-i18n="common.cancel">skip me</span>
     <span data-output data-i18n="common.cancel">generated output</span>
     <pre data-seq-reader-text data-i18n="common.cancel">sequence output</pre>
   `;
@@ -114,6 +127,7 @@ test("translateDom translates text and attributes but never values or raw output
   assert.equal(textarea.value, "keep text");
   const select = root.querySelector("select");
   assert.equal(select.textContent.trim(), "fixed");
+  assert.equal(root.querySelector("[data-i18n-skip]").textContent, "skip me");
   assert.equal(root.querySelector("[data-output]").textContent, "generated output");
   assert.equal(root.querySelector("[data-seq-reader-text]").textContent, "sequence output");
 });
@@ -144,10 +158,26 @@ test("language preference round-trips through user preferences", () => {
   assert.equal(loadUserPreferences(storage).language, "zh-CN");
   const state = createStudioState({ sessionId: "test", storage });
   assert.equal(state.language, "zh-CN");
+  assert.equal(state.languageChosen, true);
   saveUserPreferences(storage, { ...state, language: "en" });
   assert.equal(JSON.parse(data.get("h3ps-preferences-v1")).language, "en");
   data.set("h3ps-preferences-v1", JSON.stringify({ version: 1, language: "fr" }));
-  assert.equal(loadUserPreferences(storage).language, "auto");
+  assert.equal(loadUserPreferences(storage).language, undefined);
   data.set("h3ps-preferences-v1", JSON.stringify({ version: 1 }));
-  assert.equal(loadUserPreferences(storage).language, "auto");
+  assert.equal(loadUserPreferences(storage).language, undefined);
+});
+
+test("legacy users keep auto behavior without writing language until they switch", () => {
+  const data = new Map([["h3ps-preferences-v1", JSON.stringify({ version: 1, theme: "light" })]]);
+  const storage = {
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => data.set(key, value),
+  };
+  const state = createStudioState({ sessionId: "legacy", storage });
+  assert.equal(state.language, "auto");
+  assert.equal(state.languageChosen, false);
+  saveUserPreferences(storage, { ...state, theme: "dark" });
+  assert.equal(Object.hasOwn(JSON.parse(data.get("h3ps-preferences-v1")), "language"), false);
+  saveUserPreferences(storage, { ...state, language: "zh-CN", languageChosen: true });
+  assert.equal(JSON.parse(data.get("h3ps-preferences-v1")).language, "zh-CN");
 });

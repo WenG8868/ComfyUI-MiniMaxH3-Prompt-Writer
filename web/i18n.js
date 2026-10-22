@@ -6,6 +6,7 @@ export const LOCALES = Object.freeze(["en", "zh-CN"]);
 const DICTIONARIES = { en, "zh-CN": zhCN };
 const listeners = new Set();
 const warnedMissingKeys = new Set();
+let warnedLocaleSetting = false;
 
 let preference = "auto";
 let locale = "en";
@@ -24,6 +25,10 @@ export function resolveLocale(value, { app = null, navigatorLanguage: language =
   try {
     comfyLocale = app?.ui?.settings?.getSettingValue?.("Comfy.Locale") || "";
   } catch (error) {
+    if (!warnedLocaleSetting) {
+      warnedLocaleSetting = true;
+      console.warn(`[H3 Writer i18n] Failed to read Comfy.Locale, falling back to navigator language: ${error?.message || error}`);
+    }
     comfyLocale = "";
   }
   const source = String(comfyLocale || language || "");
@@ -43,7 +48,8 @@ export function lookupTranslation(targetLocale, key, dictionaries = DICTIONARIES
 }
 
 export function hasTranslation(key, targetLocale = locale) {
-  return Object.hasOwn(DICTIONARIES[targetLocale] || {}, key);
+  if (Object.hasOwn(DICTIONARIES[targetLocale] || {}, key)) return true;
+  return targetLocale !== "en" && Object.hasOwn(DICTIONARIES.en, key);
 }
 
 function interpolate(text, params) {
@@ -51,8 +57,8 @@ function interpolate(text, params) {
     Object.hasOwn(params, name) ? String(params[name]) : match);
 }
 
-export function t(key, params = {}) {
-  return interpolate(lookupTranslation(locale, key), params);
+export function t(key, params) {
+  return interpolate(lookupTranslation(locale, key), params ?? {});
 }
 
 export const msg = (key, params = {}) => ({ key, params });

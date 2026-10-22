@@ -113,7 +113,7 @@ export function loadUserPreferences(storage = globalThis.localStorage) {
       vram_handoff: value.vram_handoff === true,
       theme: value.theme === "light" ? "light" : "dark",
       interface_size: INTERFACE_SIZES.includes(value.interface_size) ? value.interface_size : "100",
-      language: LANGUAGE_PREFERENCES.includes(value.language) ? value.language : "auto",
+      ...(LANGUAGE_PREFERENCES.includes(value.language) ? { language: value.language } : {}),
     };
   } catch {
     return null;
@@ -141,7 +141,7 @@ export function saveUserPreferences(storage, state) {
     vram_handoff: state.vramHandoff === true,
     theme: state.theme === "light" ? "light" : "dark",
     interface_size: INTERFACE_SIZES.includes(state.interfaceSize) ? state.interfaceSize : "100",
-    language: LANGUAGE_PREFERENCES.includes(state.language) ? state.language : "auto",
+    ...(state.languageChosen === true && LANGUAGE_PREFERENCES.includes(state.language) ? { language: state.language } : {}),
   };
   storage?.setItem(USER_PREFERENCES_STORAGE_KEY, JSON.stringify(safe));
 }
@@ -407,6 +407,7 @@ export function createStudioState({ sessionId, storage = globalThis.localStorage
   const ollamaHost = loadOllamaHost(storage);
   return {
     language: preferences?.language || "auto",
+    languageChosen: Boolean(preferences?.language),
     mode: preferences?.mode || "Reference",
     lastVideoMode: preferences?.mode && preferences.mode !== "Music3" ? preferences.mode : "Reference",
     mediaFilter: "all",

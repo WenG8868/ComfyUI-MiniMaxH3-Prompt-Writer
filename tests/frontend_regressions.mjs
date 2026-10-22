@@ -567,7 +567,6 @@ test("user preferences persist only stable non-secret settings", () => {
     vram_handoff: true,
     theme: "light",
     interface_size: "125",
-    language: "auto",
   });
 });
 
@@ -609,7 +608,6 @@ test("user preferences ignore corrupt or unknown versions and sanitize fields", 
     vram_handoff: false,
     theme: "dark",
     interface_size: "100",
-    language: "auto",
   });
 });
 
