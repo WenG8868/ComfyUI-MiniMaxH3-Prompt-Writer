@@ -282,8 +282,9 @@ async function syncSystemPromptEditor(profile) {
   const reset = studio.root.querySelector(`[data-system-prompt-reset="${profile}"]`);
   const count = studio.root.querySelector(`[data-system-prompt-count="${profile}"]`);
   const requestMode = profile === "music3_lyrics" ? "Music3Lyrics" : profile === "music3" ? "Music3" : profile === "reference" ? "Reference" : "T2VA";
-  textarea.disabled = true;
   if (!studio.systemPromptDefaults[profile]) {
+    if (studio.localeRefreshing) return;
+    textarea.disabled = true;
     try {
       const result = await getSystemPrompt(requestMode);
       studio.systemPromptDefaults[result.profile] = result.system_prompt;
@@ -296,13 +297,16 @@ async function syncSystemPromptEditor(profile) {
     }
   }
   const custom = Object.hasOwn(studio.customSystemPrompts, profile);
-  textarea.value = custom ? studio.customSystemPrompts[profile] : studio.systemPromptDefaults[profile];
-  textarea.disabled = false;
+  if (!studio.localeRefreshing) {
+    textarea.value = custom ? studio.customSystemPrompts[profile] : studio.systemPromptDefaults[profile];
+    textarea.disabled = false;
+    resizeSystemPromptEditor(textarea);
+  }
   if (status) status.textContent = custom ? "Custom" : "Default";
   if (summaryStatus) summaryStatus.textContent = custom ? "Custom" : "Default";
   reset.hidden = !custom;
-  count.textContent = `${textarea.value.length.toLocaleString()} / 8,000`;
-  resizeSystemPromptEditor(textarea);
+  const text = custom ? studio.customSystemPrompts[profile] : studio.systemPromptDefaults[profile] || "";
+  count.textContent = `${text.length.toLocaleString()} / 8,000`;
   syncMusicSystemPromptSummary();
 }
 
@@ -2344,14 +2348,18 @@ function syncAdvancedRuntimeControls() {
   const customContext = studio.root.querySelector("[data-custom-context]");
   customContext.hidden = !direct || studio.contextProfile !== "custom";
   const contextInput = studio.root.querySelector("[data-custom-context-input]");
-  contextInput.value = studio.contextTokens || "";
+  if (!studio.localeRefreshing) {
+    contextInput.value = studio.contextTokens || "";
+  }
   const nativeContext = studio.selectedModel?.native_context_tokens;
   if (Number.isInteger(nativeContext) && nativeContext > 0) contextInput.max = String(nativeContext);
   else contextInput.removeAttribute("max");
 
   const customBudget = studio.root.querySelector("[data-custom-generation-budget]");
   customBudget.hidden = (!direct && !ollama) || studio.generationBudget !== "custom";
-  studio.root.querySelector("[data-custom-generation-budget-input]").value = studio.generationBudgetTokens || "";
+  if (!studio.localeRefreshing) {
+    studio.root.querySelector("[data-custom-generation-budget-input]").value = studio.generationBudgetTokens || "";
+  }
 
   const values = direct ? (studio.selectedModel?.reasoning_effort_values || []) : [];
   if (studio.reasoningEffort !== "auto" && !values.includes(studio.reasoningEffort)) {
@@ -3871,40 +3879,45 @@ function createStudio() {
   setMusicSystemPromptProfile(studio.musicSystemPromptProfile);
   refreshModels();
   const refreshLocalizedUi = () => {
-    syncTheme();
-    syncFullscreenState();
-    syncInterfaceSize();
-    syncWorkspace();
-    syncModeAvailability();
-    syncSelectedModelSourceLabel();
-    syncActiveModelSummary();
-    syncLifecycleActions();
-    syncProviderSettings();
-    syncRuntimeSummary();
-    syncThinkingAvailability();
-    syncContextAvailability();
-    syncAdvancedRuntimeControls();
-    syncSystemPromptEditors();
-    syncMusicSystemPromptSummary();
-    syncNotifications();
-    syncOutputLengthMeta();
-    updateBriefLayout();
-    updateMusicLyricsCount();
-    const comfyMemory = root.querySelector("[data-comfy-memory-action]");
-    if (comfyMemory) {
-      comfyMemory.title = studio.requestBusy
-        ? t("generation.free_vram_busy")
-        : t("generation.free_vram_tooltip");
+    studio.localeRefreshing = true;
+    try {
+      syncTheme();
+      syncFullscreenState();
+      syncInterfaceSize();
+      syncWorkspace();
+      syncModeAvailability();
+      syncSelectedModelSourceLabel();
+      syncActiveModelSummary();
+      syncLifecycleActions();
+      syncProviderSettings();
+      syncRuntimeSummary();
+      syncThinkingAvailability();
+      syncContextAvailability();
+      syncAdvancedRuntimeControls();
+      syncSystemPromptEditors();
+      syncMusicSystemPromptSummary();
+      syncNotifications();
+      syncOutputLengthMeta();
+      updateBriefLayout();
+      updateMusicLyricsCount();
+      const comfyMemory = root.querySelector("[data-comfy-memory-action]");
+      if (comfyMemory) {
+        comfyMemory.title = studio.requestBusy
+          ? t("generation.free_vram_busy")
+          : t("generation.free_vram_tooltip");
+      }
+      renderMedia(studio.mode);
+      if (studio.generationSnapshot) {
+        writeStatusContent(root.querySelector("[data-status]"), {
+          ...studio.generationSnapshot,
+          dots: studio.generationDotCount,
+        });
+      }
+      if (studio.toastSnapshot) writeToastContent(root.querySelector("[data-h3ps-toast]"), studio.toastSnapshot);
+      studio.sequence?.refresh();
+    } finally {
+      studio.localeRefreshing = false;
     }
-    renderMedia(studio.mode);
-    if (studio.generationSnapshot) {
-      writeStatusContent(root.querySelector("[data-status]"), {
-        ...studio.generationSnapshot,
-        dots: studio.generationDotCount,
-      });
-    }
-    if (studio.toastSnapshot) writeToastContent(root.querySelector("[data-h3ps-toast]"), studio.toastSnapshot);
-    studio.sequence?.refresh();
   };
   onLocaleChange(() => {
     console.log(`[H3 Writer i18n] ui refreshed locale=${document.documentElement.lang}`);

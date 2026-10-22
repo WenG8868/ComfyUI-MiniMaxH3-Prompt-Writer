@@ -1721,6 +1721,64 @@ test("startup generation state has no legacy preview dependency",()=>{
   new Function('studio','icon','syncModeAvailability','renderMedia','syncLifecycleActions','HOST_CAPABILITIES','generationButtonMarkup','t','msg','writeStatusContent',mainSource.slice(start,end)+';setGenerationState("idle","","");')(studio,noop,noop,noop,noop,{comfyMemory:true},generationButtonMarkup,t,msg,writeStatusContent);
 });
 
+test("locale refresh never fetches or overwrites System Prompt editors", async () => {
+  const start = mainSource.indexOf("async function syncSystemPromptEditor(");
+  const end = mainSource.indexOf("function syncSystemPromptEditors(", start);
+  const node = (value = "") => ({ disabled: false, value, textContent: "", hidden: false });
+  const fields = () => {
+    const textarea = node();
+    const status = node();
+    const summaryStatus = node();
+    const reset = node();
+    const count = node();
+    const map = new Map([
+      ['[data-system-prompt="standard"]', textarea],
+      ['[data-system-prompt-status="standard"]', status],
+      ['[data-system-prompt-summary-status="standard"]', summaryStatus],
+      ['[data-system-prompt-reset="standard"]', reset],
+      ['[data-system-prompt-count="standard"]', count],
+    ]);
+    return { textarea, status, summaryStatus, reset, count, root: { querySelector: selector => map.get(selector) } };
+  };
+  const build = () => new Function(
+    "studio", "getSystemPrompt", "showToast", "resizeSystemPromptEditor", "syncMusicSystemPromptSummary",
+    mainSource.slice(start, end) + ";return syncSystemPromptEditor;",
+  );
+
+  const refreshing = fields();
+  refreshing.textarea.value = "keep me";
+  const refreshingStudio = { root: refreshing.root, systemPromptDefaults: {}, customSystemPrompts: { standard: "keep me" }, localeRefreshing: true };
+  let toasts = 0;
+  const refreshingSync = build()(
+    refreshingStudio,
+    async () => assert.fail("locale refresh must not fetch System Prompt defaults"),
+    () => { toasts += 1; },
+    () => {},
+    () => {},
+  );
+  await refreshingSync("standard");
+  assert.equal(refreshing.textarea.value, "keep me");
+  assert.equal(refreshing.textarea.disabled, false);
+  assert.equal(toasts, 0);
+
+  const fetched = fields();
+  fetched.textarea.value = "stale";
+  const fetchedStudio = { root: fetched.root, systemPromptDefaults: {}, customSystemPrompts: {}, localeRefreshing: false };
+  let calls = 0;
+  const fetchedSync = build()(
+    fetchedStudio,
+    async (mode) => { calls += 1; assert.equal(mode, "T2VA"); return { profile: "standard", system_prompt: "default" }; },
+    () => {},
+    () => {},
+    () => {},
+  );
+  await fetchedSync("standard");
+  assert.equal(calls, 1);
+  assert.equal(fetchedStudio.systemPromptDefaults.standard, "default");
+  assert.equal(fetched.textarea.value, "default");
+  assert.equal(fetched.textarea.disabled, false);
+});
+
 test("only confirmed Writer ownership makes unknown router state a release target",async()=>{
   const status={prompt_residency:{external:{targets:[{model_id:'old',state:'unknown',writer_owned:false},{model_id:'other',state:'loaded',writer_owned:false}]}}};
   assert.deepEqual(await unloadWriterModels({getStatus:async()=>status,unloadModel:async()=>assert.fail('no confirmed Writer residency')}),[]);
