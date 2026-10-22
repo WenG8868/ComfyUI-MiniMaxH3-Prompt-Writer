@@ -1025,8 +1025,7 @@ test("Direct Thinking is disabled when the GGUF template has no detected control
 
 test("External llama.cpp keeps reasoning under server control", () => {
   assert.match(mainSource, /externalManaged = studio\.selectedModel\?\.family === "external"/);
-  assert.match(mainSource, /Thinking is controlled by the external llama\.cpp server\./);
-  assert.match(mainSource, /--reasoning on --reasoning-effort low/);
+  assert.match(mainSource, /t\("runtime\.thinking_external"\)/);
   assert.match(mainSource, /external \? null : msg\("toast\.generation\.thinking"/);
   assert.match(stateSource, /state\.selectedModel\?\.family === "external" \? false : state\.thinking/);
 });
@@ -1261,18 +1260,18 @@ test("Settings separates providers, installed models, diagnostics, and verified 
   assert.doesNotMatch(markup, /Prompt models/);
   assert.doesNotMatch(markup, /data-model-menu/);
   assert.doesNotMatch(markup, /<strong>Context<\/strong>/);
-  assert.match(mainSource, /llama-cpp-python is not installed/);
+  assert.match(mainSource, /t\("models\.runtime_missing_title"\)/);
   assert.match(mainSource, /data-copy-direct-runtime-command/);
-  assert.match(mainSource, /Close ComfyUI, run this from your ComfyUI Portable folder/);
-  assert.match(mainSource, /Installation guide ↗/);
-  assert.match(mainSource, /Troubleshooting guide ↗/);
-  assert.match(mainSource, /llama-cpp-python is installed, but the runtime is not usable/);
-  assert.match(mainSource, /diagnostics\.gpu_offload === false[\s\S]{0,100}"Runtime detected"/);
-  assert.match(mainSource, /Runtime update required/);
-  assert.match(mainSource, /Runtime \$\{requirement\.minimum_version\}\+ required/);
+  assert.match(mainSource, /t\("models\.restart_before"\)/);
+  assert.match(mainSource, /t\("models\.installation_guide"\)/);
+  assert.match(mainSource, /t\("models\.troubleshooting_guide"\)/);
+  assert.match(mainSource, /t\("models\.runtime_broken_title"\)/);
+  assert.match(mainSource, /diagnostics\.gpu_offload === false[\s\S]{0,100}t\("models\.runtime_detected"\)/);
+  assert.match(mainSource, /t\("models\.runtime_update_required"\)/);
+  assert.match(mainSource, /t\("models\.update_suffix", \{ version: requirement\.minimum_version \}\)/);
   assert.match(mainSource, /install_or_upgrade_command/);
   assert.doesNotMatch(mainSource, /dependency !== "llama-cpp-python"/);
-  assert.match(mainSource, /Troubleshooting ↗/);
+  assert.match(mainSource, /t\("models\.troubleshooting"\)/);
   assert.match(mainSource, /refreshGGUFRuntimeDiagnostics\(\)/);
   assert.match(markup, /h3ps-model-icon h3ps-provider-icon[^>]+data-provider-icon="direct"/);
   assert.match(mainSource, /runtimeSettings\.hidden = !\["direct", "ollama"\]\.includes\(provider\)/);
@@ -1387,7 +1386,7 @@ test("Settings shows compact global System Prompt summaries and an on-demand edi
   assert.match(mainSource, /generationBudgetOverride = studio\.generationBudget !== "auto"/);
   assert.match(mainSource, /overrideCount = Number\(studio\.kvCache !== "auto"\)/);
   assert.match(mainSource, /Number\.isInteger\(studio\.generationBudgetTokens\)/);
-  assert.match(mainSource, /overrideCount === 1 \? "" : "s"/);
+  assert.match(mainSource, /t\(overrideCount === 1 \? "runtime\.overrides\.one" : "runtime\.overrides\.other", \{ count: overrideCount \}\)/);
   assert.match(stylesSource, /\.h3ps-runtime-picker \{ position:relative/);
   assert.match(stylesSource, /--h3ps-runtime-field-width:132px/);
   assert.match(stylesSource, /\.h3ps-runtime-custom input \{[^}]*width:12ch[^}]*appearance:textfield/);
@@ -1399,9 +1398,9 @@ test("Settings shows compact global System Prompt summaries and an on-demand edi
   assert.match(mainSource, /const availableContexts = model\.context_profiles/);
   assert.match(mainSource, /studio\.directContextProfile = "auto"/);
   assert.match(mainSource, /button\.disabled = unavailable/);
-  assert.match(mainSource, /Large model · measure locally/);
-  assert.match(mainSource, /llama-cpp-python \$\{model\.minimum_runtime\}\+/);
-  assert.match(mainSource, /"Server managed"/);
+  assert.match(mainSource, /t\("models\.large_measure"\)/);
+  assert.match(mainSource, /t\("models\.minimum_runtime", \{ version: model\.minimum_runtime \}\)/);
+  assert.match(mainSource, /t\("runtime\.server_managed"\)/);
   assert.match(mainSource, /generate\(buildGeneratePayload\(studio/);
   assert.match(mainSource, /refine\(buildRefinePayload\(studio/);
 });
@@ -1531,11 +1530,20 @@ test("active requests block add, reorder, and mode switching", () => {
 
 test("text-only Direct UI disables visual modes and explains the fallback", () => {
   assert.match(mainSource, /function syncModeAvailability\(\)/);
-  assert.match(mainSource, /Text-only model · T2VA and Music3 available/);
-  assert.match(mainSource, /Switched to T2VA/);
+  assert.match(mainSource, /t\("models\.text_only_note"\)/);
+  assert.match(mainSource, /msg\("toast\.mode\.switched_t2va\.title"\)/);
   assert.match(mainSource, /if \(!generationModeIsAvailable\(\)\) return/);
   assert.match(stylesSource, /\.h3ps-modes button:disabled/);
   assert.match(skinSource, /\.h3ps-workspaces button:disabled/);
+});
+
+test("runtime and model labels are translation-driven", () => {
+  assert.match(mainSource, /function contextLabel\(value\)/);
+  assert.match(mainSource, /t\("models\.runtime_inspect_failed"\)/);
+  assert.match(mainSource, /hasTranslation\(`runtime\.reasoning\.\$\{value\}`\)/);
+  assert.match(mainSource, /msg\("toast\.models\.refreshed\.title"\)/);
+  assert.match(mainSource, /msg\("toast\.system_prompt\.reset\.title"\)/);
+  assert.match(mainSource, /t\("launcher\.open_title"\)/);
 });
 
 test("closed Prompt Writer does not advertise an active modal", () => {

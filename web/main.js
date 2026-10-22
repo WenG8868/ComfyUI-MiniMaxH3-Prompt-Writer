@@ -14,6 +14,7 @@ import {
   configureI18n,
   getLanguagePreference,
   getLocale,
+  hasTranslation,
   messageText,
   msg,
   normalizeLanguagePreference,
@@ -1592,12 +1593,12 @@ async function startGenerationPreview() {
       showErrorToast("toast.generation.vision_required.title", error);
     } else if (error.code === "CONTEXT_BUDGET_EXCEEDED" && error.details?.suggested_context_profile && studio.selectedModel?.family === "gguf") {
       const target = error.details.suggested_context_profile;
-      const targetLabel = CONTEXT_LABELS[target] || target;
+      const targetLabel = contextLabel(target);
       showToast(
         msg("toast.generation.more_context.title"),
         msg("toast.generation.more_context.message", {
           target: targetLabel,
-          current: CONTEXT_LABELS[studio.contextProfile] || studio.contextProfile,
+          current: contextLabel(studio.contextProfile),
         }),
         null,
         { label: msg("toast.generation.more_context.action", { context: targetLabel }), onClick: () => {
@@ -1627,11 +1628,11 @@ async function startGenerationPreview() {
 function modelVramLabel(model) {
   if (["external", "api"].includes(model?.family)) return "";
   const name = model?.name?.toLowerCase() || "";
-  if (/e4b/.test(name)) return "8 GB VRAM";
-  if (/12b/.test(name) && /q4/.test(name)) return "12 GB VRAM";
-  if (/12b/.test(name)) return "16 GB VRAM";
-  if (/26b/.test(name)) return "24 GB VRAM";
-  if (/31b/.test(name)) return "32 GB VRAM";
+  if (/e4b/.test(name)) return t("models.vram", { gb: 8 });
+  if (/12b/.test(name) && /q4/.test(name)) return t("models.vram", { gb: 12 });
+  if (/12b/.test(name)) return t("models.vram", { gb: 16 });
+  if (/26b/.test(name)) return t("models.vram", { gb: 24 });
+  if (/31b/.test(name)) return t("models.vram", { gb: 32 });
   return "";
 }
 
@@ -1649,14 +1650,14 @@ function detectedVramTier() {
 
 function renderModelSetupRows() {
   const tier = detectedVramTier();
+  const fits = t("models.fits_vram_title");
   return studio.modelSetup.map((model, index) => {
-    const modelSize = model.vram_gb ? `${model.vram_gb} GB VRAM` : "Large model · measure locally";
-    const contextLabel = ({ low: "8K", standard: "16K", extended: "24K", large: "32K", maximum: "48K" })[model.recommended_context] || "Auto";
-    const runtimeLabel = model.minimum_runtime ? ` · llama-cpp-python ${model.minimum_runtime}+` : "";
+    const modelSize = model.vram_gb ? t("models.vram", { gb: model.vram_gb }) : t("models.large_measure");
+    const runtimeLabel = model.minimum_runtime ? ` · ${t("models.minimum_runtime", { version: model.minimum_runtime })}` : "";
     return `
-    <div class="h3ps-model-setup-row ${model.vram_gb === tier ? "fits-detected-vram" : ""}" ${model.vram_gb === tier ? 'title="Fits the detected total VRAM tier"' : ""}>
-      <span><strong>${escapeHtml(model.name)}</strong><small>${modelSize} · ${contextLabel}${runtimeLabel}${model.vram_gb === tier ? " · Fits detected VRAM" : ""}</small><small class="h3ps-model-source">${escapeHtml(model.source_label)}</small></span>
-      <span class="h3ps-model-files"><button type="button" data-model-files-toggle="${index}">Files ↗</button><span data-model-files-menu="${index}" hidden><a href="${model.model_url}" target="_blank" rel="noopener noreferrer">Model file ↗</a><a href="${model.projector_url}" target="_blank" rel="noopener noreferrer">Projector file ↗</a></span></span>
+    <div class="h3ps-model-setup-row ${model.vram_gb === tier ? "fits-detected-vram" : ""}" ${model.vram_gb === tier ? `title="${escapeHtml(fits)}"` : ""}>
+      <span><strong>${escapeHtml(model.name)}</strong><small>${modelSize} · ${contextLabel(model.recommended_context)}${runtimeLabel}${model.vram_gb === tier ? ` · ${t("models.fits_vram")}` : ""}</small><small class="h3ps-model-source">${escapeHtml(model.source_label)}</small></span>
+      <span class="h3ps-model-files"><button type="button" data-model-files-toggle="${index}">${t("models.files")}</button><span data-model-files-menu="${index}" hidden><a href="${model.model_url}" target="_blank" rel="noopener noreferrer">${t("models.model_file")}</a><a href="${model.projector_url}" target="_blank" rel="noopener noreferrer">${t("models.projector_file")}</a></span></span>
     </div>`;
   }).join("");
 }
@@ -1667,28 +1668,28 @@ function modelDiscoveryDetails() {
   const lines = [];
   for (const root of roots) {
     lines.push(root.path);
-    lines.push(`  Model GGUF: ${root.model_files.length}`);
+    lines.push(`  ${t("models.scan_model_gguf", { count: root.model_files.length })}`);
     for (const path of root.model_files) lines.push(`    ${path}`);
-    lines.push(`  Vision projector GGUF: ${root.projector_files.length}`);
+    lines.push(`  ${t("models.scan_projector_gguf", { count: root.projector_files.length })}`);
     for (const path of root.projector_files) lines.push(`    ${path}`);
-    for (const issue of root.issues) lines.push(`  Issue: ${issue}`);
+    for (const issue of root.issues) lines.push(`  ${t("models.scan_issue", { issue })}`);
   }
   return lines.join("\n");
 }
 
 function renderModelScanDetails() {
   const discovery = modelDiscoveryDetails();
-  return discovery ? `<details class="h3ps-model-scan"><summary>Scan details</summary><pre>${escapeHtml(discovery)}</pre></details>` : "";
+  return discovery ? `<details class="h3ps-model-scan"><summary>${t("models.scan_details")}</summary><pre>${escapeHtml(discovery)}</pre></details>` : "";
 }
 
 function renderModelSetup() {
   const directory = studio.modelDirectory || "ComfyUI/models/LLM/";
   return `
     <div class="h3ps-model-setup h3ps-direct-model-empty">
-      <strong>No compatible local model found</strong>
-      <p>Open the two verified Hugging Face pages, download both files, then place them in:</p>
+      <strong>${t("models.none_title")}</strong>
+      <p>${t("models.none_body")}</p>
       <button type="button" class="h3ps-model-path" data-copy-model-path><code>${escapeHtml(directory)}</code>${icon("copy", 13)}</button>
-      <p>Keep compatible model GGUFs and their vision projector together. One projector can serve several quant files from the same model family.</p>
+      <p>${t("models.keep_together")}</p>
     </div>`;
 }
 
@@ -1704,14 +1705,15 @@ function directRuntimeActionCommand() {
 
 function renderDirectRuntimeCommand(command, action = "installation") {
   if (!command) return "";
-  return `<div class="h3ps-direct-runtime-command"><code>${escapeHtml(command)}</code><button type="button" data-copy-direct-runtime-command="${escapeHtml(command)}" title="Copy ${escapeHtml(action)} command" aria-label="Copy ${escapeHtml(action)} command">${icon("copy", 13)}</button></div><small>Close ComfyUI, run this from your ComfyUI Portable folder containing <code>python_embeded</code>, then restart ComfyUI.</small>`;
+  const title = t("models.copy_command_title", { action: t(`models.action.${action}`) });
+  return `<div class="h3ps-direct-runtime-command"><code>${escapeHtml(command)}</code><button type="button" data-copy-direct-runtime-command="${escapeHtml(command)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${icon("copy", 13)}</button></div><small>${t("models.restart_before")} <code>python_embeded</code>${t("models.restart_after")}</small>`;
 }
 
 function renderDirectRuntimeStatus() {
   const diagnostics = studio.ggufRuntimeDiagnostics;
   if (!diagnostics) {
     return studio.ggufRuntimeDiagnosticsLoading
-      ? `<section class="h3ps-direct-runtime-state is-checking"><header><span><small>Runtime</small><strong>Checking llama-cpp-python…</strong></span></header></section>`
+      ? `<section class="h3ps-direct-runtime-state is-checking"><header><span><small>${t("models.runtime")}</small><strong>${t("models.checking_runtime")}</strong></span></header></section>`
       : "";
   }
   const onboarding = diagnostics.onboarding || {};
@@ -1719,31 +1721,34 @@ function renderDirectRuntimeStatus() {
   if (onboarding.state === "missing") {
     const command = directRuntimeActionCommand();
     return `<section class="h3ps-direct-runtime-state is-missing">
-      <header><span><small>Runtime</small><strong>llama-cpp-python is not installed.</strong></span></header>
-      <p>Direct GGUF needs an additional native runtime. Ollama and API providers work without it.</p>
+      <header><span><small>${t("models.runtime")}</small><strong>${t("models.runtime_missing_title")}</strong></span></header>
+      <p>${t("models.runtime_missing_body")}</p>
       ${renderDirectRuntimeCommand(command)}
-      <div class="h3ps-direct-runtime-links"><a href="${INSTALLATION_GUIDE_URL}" target="_blank" rel="noopener noreferrer">Installation guide ↗</a><a href="${TROUBLESHOOTING_GUIDE_URL}" target="_blank" rel="noopener noreferrer">Troubleshooting guide ↗</a></div>
+      <div class="h3ps-direct-runtime-links"><a href="${INSTALLATION_GUIDE_URL}" target="_blank" rel="noopener noreferrer">${t("models.installation_guide")}</a><a href="${TROUBLESHOOTING_GUIDE_URL}" target="_blank" rel="noopener noreferrer">${t("models.troubleshooting_guide")}</a></div>
     </section>`;
   }
-  const version = diagnostics.package_version ? ` Version ${escapeHtml(diagnostics.package_version)} was detected.` : "";
+  const version = diagnostics.package_version ? t("models.version_detected", { version: escapeHtml(diagnostics.package_version) }) : "";
   return `<section class="h3ps-direct-runtime-state is-broken">
-    <header><span><small>Runtime</small><strong>llama-cpp-python is installed, but the runtime is not usable.</strong></span></header>
-    <p>The installed package does not match the Direct GGUF runtime requirements.${version}</p>
-    <a href="${TROUBLESHOOTING_GUIDE_URL}" target="_blank" rel="noopener noreferrer">Troubleshooting ↗</a>
+    <header><span><small>${t("models.runtime")}</small><strong>${t("models.runtime_broken_title")}</strong></span></header>
+    <p>${t("models.runtime_broken_body", { version })}</p>
+    <a href="${TROUBLESHOOTING_GUIDE_URL}" target="_blank" rel="noopener noreferrer">${t("models.troubleshooting")}</a>
   </section>`;
 }
 
 function localRuntimeLabel() {
   const diagnostics = studio?.ggufRuntimeDiagnostics;
-  if (!diagnostics) return "Local GGUF · llama-cpp-python";
-  if (diagnostics.status !== "ok") return "Runtime could not be inspected";
-  const offload = diagnostics.gpu_offload === true
-    ? "GPU offload available"
+  if (!diagnostics) return t("settings.local_runtime");
+  if (diagnostics.status !== "ok") return t("models.runtime_inspect_failed");
+  const runtime = diagnostics.gpu_offload === true
+    ? t("models.gpu_offload_available")
     : diagnostics.gpu_offload === false
-      ? "GPU offload unavailable"
-      : "Runtime detected";
+      ? t("models.gpu_offload_unavailable")
+      : t("models.runtime_detected");
   const version = diagnostics.package_version ? ` ${diagnostics.package_version}` : "";
-  return `${offload === "Runtime detected" ? `Runtime${version} detected` : `${offload}${version}`}${diagnostics.backend ? ` · ${diagnostics.backend}` : ""}`;
+  const base = diagnostics.gpu_offload == null
+    ? t("models.runtime_version_detected", { version })
+    : `${runtime}${version}`;
+  return `${base}${diagnostics.backend ? ` · ${diagnostics.backend}` : ""}`;
 }
 
 function syncSelectedModelSourceLabel() {
@@ -1751,16 +1756,16 @@ function syncSelectedModelSourceLabel() {
   const localModel = studio.selectedModel?.family === "gguf"
     ? studio.selectedModel
     : studio.models.find((model) => model.family === "gguf" && model.runtime_ready) || studio.models.find((model) => model.family === "gguf");
-  studio.root.querySelector("[data-model-source-label]").textContent = localModel ? localRuntimeLabel() : "No compatible Direct GGUF model";
+  studio.root.querySelector("[data-model-source-label]").textContent = localModel ? localRuntimeLabel() : t("models.no_direct_model");
   studio.root.querySelector("[data-active-model-source]").textContent = studio.selectedModel?.family === "external"
-    ? "External server"
+    ? t("models.external_server")
     : studio.selectedModel?.family === "ollama"
-      ? "Ollama · local service"
+      ? t("models.ollama_local")
       : studio.selectedModel?.family === "api"
-        ? `${studio.selectedModel.api_preset} · API provider`
+        ? t("models.api_provider", { preset: studio.selectedModel.api_preset })
       : studio.selectedModel
         ? localRuntimeLabel()
-        : "No prompt model";
+        : t("models.no_model");
 }
 
 function syncActiveModelSummary(runtimeSummary = null) {
@@ -1776,14 +1781,14 @@ function syncActiveModelSummary(runtimeSummary = null) {
         : "direct";
   modelIcon.textContent = "";
   modelIcon.dataset.providerIcon = providerIcon;
-  studio.root.querySelector("[data-active-model-name]").textContent = model ? model.name.split("/").pop() : "No compatible prompt model";
+  studio.root.querySelector("[data-active-model-name]").textContent = model ? model.name.split("/").pop() : t("models.no_prompt_model");
   studio.root.querySelector("[data-active-model-source]").textContent = model?.family === "external"
-    ? "External server"
+    ? t("models.external_server")
     : model?.family === "ollama"
-      ? "Ollama · local service"
+      ? t("models.ollama_local")
       : model?.family === "api"
-        ? `${model.api_preset} · API provider`
-      : model ? localRuntimeLabel() : "Open Settings to configure";
+        ? t("models.api_provider", { preset: model.api_preset })
+      : model ? localRuntimeLabel() : t("models.open_settings");
   if (runtimeSummary != null) studio.root.querySelector("[data-active-runtime-summary]").textContent = runtimeSummary;
 }
 
@@ -1793,7 +1798,7 @@ async function inspectDirectRuntime() {
     try {
       await loadGGUFRuntimeDiagnostics();
     } catch (error) {
-      showToast("Runtime could not be inspected", "The package preflight was unavailable. Generation will continue with the existing runtime behavior.", error.details || error.message);
+      showToast(msg("models.runtime_inspect_failed"), msg("models.preflight_unavailable"), error.details || error.message);
       return true;
     }
     syncSelectedModelSourceLabel();
@@ -1804,7 +1809,7 @@ async function inspectDirectRuntime() {
   if (blocking) {
     const warning = diagnostics.warnings?.[0];
     showToast(
-      warning ? "Native runtime configuration issue" : "Native runtime compatibility check failed",
+      msg(warning ? "models.runtime_config_issue" : "models.runtime_check_failed"),
       warning?.message || diagnostics.message,
       diagnostics,
     );
@@ -1812,10 +1817,10 @@ async function inspectDirectRuntime() {
   }
   if (diagnostics.status !== "ok" && !studio.runtimeWarningShown) {
     studio.runtimeWarningShown = true;
-    showToast("Runtime could not be inspected", diagnostics.message, diagnostics);
+    showToast(msg("models.runtime_inspect_failed"), diagnostics.message, diagnostics);
   } else if (diagnostics.gpu_offload === false && !studio.runtimeWarningShown) {
     studio.runtimeWarningShown = true;
-    showToast("GPU offload unavailable", "This llama.cpp build may generate on CPU and can be much slower. Install a GPU-enabled wheel that matches ComfyUI's Python and runtime.", diagnostics);
+    showToast(msg("models.gpu_offload_title"), msg("models.gpu_offload_body"), diagnostics);
   }
   return true;
 }
@@ -1823,7 +1828,7 @@ async function inspectDirectRuntime() {
 function renderOtherModelsTrigger() {
   return `
     <button class="h3ps-other-models-trigger" type="button" data-other-models-toggle aria-expanded="false">
-      <span><strong>Browse verified models</strong><small>Model and projector download pairs</small></span>${icon("chevron", 14)}
+      <span><strong>${t("models.browse_verified")}</strong><small>${t("models.browse_verified_subtitle")}</small></span>${icon("chevron", 14)}
     </button>`;
 }
 
@@ -2080,30 +2085,30 @@ function syncProviderSettings() {
   runtimeSettings.querySelector('[data-runtime-toggle="context"]').closest(".h3ps-runtime-control").hidden = provider !== "direct";
   runtimeSettings.querySelector('[data-runtime-toggle="kv"]').closest(".h3ps-runtime-control").hidden = provider !== "direct";
   runtimeSettings.querySelector("[data-runtime-management]").textContent = provider === "ollama"
-    ? "Ollama context is planned automatically. Generation budget applies to the next request, including thinking."
-    : "Direct GGUF runtime settings are applied to the next request.";
+    ? t("models.ollama_context_note")
+    : t("settings.runtime_note");
 }
 
 function directModelRuntimeSuffix(model) {
   const requirement = model.runtime_requirement || {};
   if (requirement.state === "update_required") {
-    return `Runtime ${requirement.minimum_version}+ required`;
+    return t("models.update_suffix", { version: requirement.minimum_version });
   }
-  if (requirement.state === "missing") return "Runtime required";
-  if (requirement.state === "incompatible") return "Runtime incompatible";
+  if (requirement.state === "missing") return t("models.runtime_required");
+  if (requirement.state === "incompatible") return t("models.runtime_incompatible");
   return "";
 }
 
 function renderDirectModelRuntimeUpdate(model) {
   const requirement = model.runtime_requirement || {};
-  const installed = requirement.installed_version || studio.ggufRuntimeDiagnostics?.package_version || "unknown";
-  const minimum = requirement.minimum_version || "a newer version";
+  const installed = requirement.installed_version || studio.ggufRuntimeDiagnostics?.package_version || t("models.unknown");
+  const minimum = requirement.minimum_version || t("models.newer");
   const command = directRuntimeActionCommand();
   return `<section class="h3ps-direct-runtime-state is-missing">
-    <header><span><small>Runtime</small><strong>Runtime update required</strong></span></header>
-    <p>Installed llama-cpp-python ${escapeHtml(installed)}. ${escapeHtml(model.name)} requires ${escapeHtml(minimum)} or newer.</p>
+    <header><span><small>${t("models.runtime")}</small><strong>${t("models.runtime_update_required")}</strong></span></header>
+    <p>${t("models.installed_requires", { installed: escapeHtml(installed), model: escapeHtml(model.name), minimum: escapeHtml(minimum) })}</p>
     ${renderDirectRuntimeCommand(command, "update")}
-    ${command ? "" : `<div class="h3ps-direct-runtime-links"><a href="${INSTALLATION_GUIDE_URL}" target="_blank" rel="noopener noreferrer">Installation guide ↗</a><a href="${TROUBLESHOOTING_GUIDE_URL}" target="_blank" rel="noopener noreferrer">Troubleshooting guide ↗</a></div>`}
+    ${command ? "" : `<div class="h3ps-direct-runtime-links"><a href="${INSTALLATION_GUIDE_URL}" target="_blank" rel="noopener noreferrer">${t("models.installation_guide")}</a><a href="${TROUBLESHOOTING_GUIDE_URL}" target="_blank" rel="noopener noreferrer">${t("models.troubleshooting_guide")}</a></div>`}
   </section>`;
 }
 
@@ -2119,7 +2124,7 @@ function renderProjectorChoice(model) {
   const choices = model?.projector_candidates || [];
   slot.replaceChildren();
   if (choices.length < 2) return;
-  slot.innerHTML = `<label class="h3ps-field"><span>Vision projector</span><select aria-label="Vision projector"><option value="">Choose a compatible projector…</option>${choices.map(path => `<option value="${escapeHtml(path)}" ${path === model.selected_projector ? "selected" : ""}>${escapeHtml(path.split(/[\\/]/).pop())}</option>`).join("")}</select></label><p class="h3ps-direct-model-note">Several projectors match this model. Choose the intended file.</p>`;
+  slot.innerHTML = `<label class="h3ps-field"><span>${t("models.vision_projector")}</span><select aria-label="${t("models.vision_projector")}"><option value="">${t("models.choose_projector")}</option>${choices.map(path => `<option value="${escapeHtml(path)}" ${path === model.selected_projector ? "selected" : ""}>${escapeHtml(path.split(/[\\/]/).pop())}</option>`).join("")}</select></label><p class="h3ps-direct-model-note">${t("models.multiple_projectors")}</p>`;
   const select = slot.querySelector("select");
   select.addEventListener("change", async () => {
     const revision = studio.modelSelectionRevision;
@@ -2133,7 +2138,7 @@ function renderProjectorChoice(model) {
       localStorage.setItem("h3-writer-projectors", JSON.stringify(saved));
       studio.models = studio.models.map(m => m.id === model.id ? result.model : m);
       selectModel(result.model);
-    } catch (error) { showToast("Projector selection", error.message); }
+    } catch (error) { showToast(msg("models.projector_selection"), error.message); }
     finally { if (select.isConnected) select.disabled = false; }
   });
 }
@@ -2151,13 +2156,13 @@ function renderInferenceSettings() {
       const suffix = [
         modelVramLabel(model),
         model.format,
-        modelFileNeedsSetup ? "Needs setup" : "",
+        modelFileNeedsSetup ? t("models.needs_setup") : "",
         directModelRuntimeSuffix(model),
-        isTextOnlyDirectModel(model) ? "Text only" : "",
+        isTextOnlyDirectModel(model) ? t("models.text_only") : "",
       ].filter(Boolean).join(" · ");
       return `<option value="${escapeHtml(model.id)}" ${model.id === directModel?.id ? "selected" : ""}>${escapeHtml(model.name.split("/").pop())}${suffix ? ` — ${escapeHtml(suffix)}` : ""}</option>`;
     }).join("")
-    : "<option>No compatible model found</option>";
+    : `<option>${t("models.none_found")}</option>`;
   studio.root.querySelector("[data-direct-runtime-status]").innerHTML = renderDirectRuntimeStatus();
   const directStatus = studio.root.querySelector("[data-direct-model-status]");
   if (!models.length) {
@@ -2165,11 +2170,11 @@ function renderInferenceSettings() {
   } else if (directModel) {
     const runtimeRequirement = directModel.runtime_requirement || {};
     directStatus.innerHTML = directModel.model_ready === false
-      ? `<div class="h3ps-direct-model-warning"><strong>Model needs attention</strong><span>${escapeHtml(directModel.setup_message || "The GGUF metadata or architecture is not supported.")}</span></div>`
+      ? `<div class="h3ps-direct-model-warning"><strong>${t("models.needs_attention")}</strong><span>${escapeHtml(directModel.setup_message || t("models.unsupported"))}</span></div>`
       : runtimeRequirement.state === "update_required"
         ? renderDirectModelRuntimeUpdate(directModel)
         : isTextOnlyDirectModel(directModel)
-          ? `<div class="h3ps-direct-model-note"><strong>Text-only model · T2VA and Music3 available</strong><span>${escapeHtml(directModel.capability_message || "No compatible vision projector is active.")}</span></div>`
+          ? `<div class="h3ps-direct-model-note"><strong>${t("models.text_only_note")}</strong><span>${escapeHtml(directModel.capability_message || t("models.no_projector"))}</span></div>`
           : "";
   } else {
     directStatus.innerHTML = "";
@@ -2312,8 +2317,8 @@ function selectModel(model, { preserveSettingsProvider = false } = {}) {
   saveUserPreferences(localStorage, studio);
   if (switchedToT2VA && !studio.preferencesRestoring) {
     showToast(
-      "Switched to T2VA",
-      model?.capability_message || "The selected Direct GGUF has no compatible vision projector.",
+      msg("toast.mode.switched_t2va.title"),
+      model?.capability_message || msg("toast.mode.switched_t2va.message"),
     );
   }
 }
@@ -2351,6 +2356,22 @@ function applyRuntimePreferences(provider) {
   }
 }
 
+const CONTEXT_LABELS = { auto: "settings.auto", low: "8K", standard: "16K", extended: "24K", large: "32K", maximum: "48K", custom: "settings.custom" };
+const KV_LABELS = { auto: "settings.auto", q8: "Q8", f16: "F16" };
+const BUDGET_LABELS = { auto: "settings.auto", 2048: "2K", 4096: "4K", 8192: "8K", custom: "settings.custom" };
+const labelText = (value) => String(value).startsWith("settings.") ? t(value) : String(value);
+function contextLabel(value) {
+  return labelText(CONTEXT_LABELS[value] ?? (value || "settings.auto"));
+}
+const kvLabel = (value) => labelText(KV_LABELS[value] ?? value);
+const budgetLabel = (value) => labelText(BUDGET_LABELS[value] ?? value);
+function reasoningLabel(value) {
+  if (value === "auto") return t("settings.auto");
+  return hasTranslation(`runtime.reasoning.${value}`)
+    ? t(`runtime.reasoning.${value}`)
+    : value[0].toUpperCase() + value.slice(1);
+}
+
 function syncThinkingAvailability() {
   if (!studio) return;
   const apiManaged = studio.selectedModel?.family === "api";
@@ -2370,15 +2391,11 @@ function syncThinkingAvailability() {
   label.hidden = apiManaged;
   label.classList.toggle("is-disabled", disabled);
   label.title = externalManaged
-    ? "Thinking is controlled by the external llama.cpp server. Start it with --reasoning on --reasoning-effort low to enable, or --reasoning off to disable."
+    ? t("runtime.thinking_external")
     : unsupported
-    ? "This provider model does not report thinking controls."
-    : disabled ? "Thinking needs 16K or larger Context." : "";
+    ? t("runtime.thinking_unsupported")
+    : disabled ? t("runtime.thinking_needs_context") : "";
 }
-
-const CONTEXT_LABELS = { auto: "Auto", low: "8K", standard: "16K", extended: "24K", large: "32K", maximum: "48K", custom: "Custom" };
-const KV_LABELS = { auto: "Auto", q8: "Q8", f16: "F16" };
-const BUDGET_LABELS = { auto: "Auto", 2048: "2K", 4096: "4K", 8192: "8K", custom: "Custom" };
 
 function syncContextAvailability() {
   const profiles = studio.selectedModel?.family === "gguf"
@@ -2391,7 +2408,7 @@ function syncContextAvailability() {
       && !profiles.includes(button.dataset.value);
     button.disabled = unavailable;
     button.setAttribute("aria-disabled", String(unavailable));
-    button.title = unavailable ? "This Context tier is not available for the selected Direct model." : "";
+    button.title = unavailable ? t("runtime.context_unavailable") : "";
   });
 }
 
@@ -2430,10 +2447,10 @@ function syncAdvancedRuntimeControls() {
     + Number(generationBudgetOverride)
     + Number(studio.reasoningEffort !== "auto" && values.includes(studio.reasoningEffort));
   studio.root.querySelector("[data-direct-advanced-summary]").textContent = overrideCount
-    ? `${overrideCount} override${overrideCount === 1 ? "" : "s"}`
-    : "Auto";
+    ? t(overrideCount === 1 ? "runtime.overrides.one" : "runtime.overrides.other", { count: overrideCount })
+    : t("settings.auto");
   const menu = studio.root.querySelector('[data-runtime-menu="reasoning"]');
-  menu.innerHTML = ["auto", ...values].map((value) => `<button type="button" data-runtime-option="reasoning" data-value="${escapeHtml(value)}">${value === "auto" ? "Auto" : escapeHtml(value[0].toUpperCase() + value.slice(1))}</button>`).join("");
+  menu.innerHTML = ["auto", ...values].map((value) => `<button type="button" data-runtime-option="reasoning" data-value="${escapeHtml(value)}">${reasoningLabel(value)}</button>`).join("");
   menu.querySelectorAll('[data-runtime-option="reasoning"]').forEach((button) => button.addEventListener("click", (event) => applyRuntimeOption(button, event)));
 }
 
@@ -2471,27 +2488,25 @@ function syncRuntimeSummary(result = null) {
   if (!studio) return;
   syncContextAvailability();
   syncAdvancedRuntimeControls();
-  const customContextLabel = studio.contextTokens ? `${Number(studio.contextTokens).toLocaleString()}` : "Custom";
-  studio.root.querySelector('[data-runtime-label="context"]').textContent = CONTEXT_LABELS[studio.contextProfile];
-  studio.root.querySelector('[data-runtime-label="kv"]').textContent = KV_LABELS[studio.kvCache];
-  studio.root.querySelector('[data-runtime-label="budget"]').textContent = BUDGET_LABELS[studio.generationBudget];
-  studio.root.querySelector('[data-runtime-label="reasoning"]').textContent = studio.reasoningEffort === "auto"
-    ? "Auto"
-    : studio.reasoningEffort[0].toUpperCase() + studio.reasoningEffort.slice(1);
+  const customContextLabel = studio.contextTokens ? `${Number(studio.contextTokens).toLocaleString()}` : t("settings.custom");
+  studio.root.querySelector('[data-runtime-label="context"]').textContent = contextLabel(studio.contextProfile);
+  studio.root.querySelector('[data-runtime-label="kv"]').textContent = kvLabel(studio.kvCache);
+  studio.root.querySelector('[data-runtime-label="budget"]').textContent = budgetLabel(studio.generationBudget);
+  studio.root.querySelector('[data-runtime-label="reasoning"]').textContent = reasoningLabel(studio.reasoningEffort);
   let activeSummary;
   if (studio.selectedModel?.family === "external") {
     const tokens = result?.context_tokens || studio.selectedModel.server_context_tokens;
-    activeSummary = tokens ? `Server · ${Math.round(tokens / 1024)}K` : "Server managed";
+    activeSummary = tokens ? t("runtime.server_context", { tokens: Math.round(tokens / 1024) }) : t("runtime.server_managed");
   } else if (studio.selectedModel?.family === "ollama") {
     const tokens = result?.context_tokens || (studio.contextProfile === "auto" ? null : ({ low: 8192, standard: 16384, extended: 24576, large: 32768, maximum: 49152 }[studio.contextProfile]));
-    activeSummary = tokens ? `Ollama · ${Math.round(tokens / 1024)}K` : "Ollama · Auto";
+    activeSummary = tokens ? t("runtime.ollama_context", { tokens: Math.round(tokens / 1024) }) : t("runtime.ollama_auto");
   } else if (studio.selectedModel?.family === "api") {
     const tokens = result?.context_limit_known ? result.context_tokens : studio.selectedModel.model_context_limit;
-    activeSummary = tokens ? `API · ${Math.round(tokens / 1024)}K` : "API · Provider managed";
+    activeSummary = tokens ? t("runtime.api_context", { tokens: Math.round(tokens / 1024) }) : t("runtime.api_managed");
   } else if (result && studio.contextProfile === "auto") {
-    activeSummary = `Auto → ${Math.round(result.context_tokens / 1024)}K · ${String(result.kv_cache).toUpperCase()}`;
+    activeSummary = t("runtime.auto_result", { tokens: Math.round(result.context_tokens / 1024), kv: String(result.kv_cache).toUpperCase() });
   } else {
-    activeSummary = studio.contextProfile === "auto" ? "Runtime · Auto" : `${studio.contextProfile === "custom" ? customContextLabel : CONTEXT_LABELS[studio.contextProfile]} · ${KV_LABELS[studio.kvCache]}`;
+    activeSummary = studio.contextProfile === "auto" ? t("models.runtime_summary") : `${studio.contextProfile === "custom" ? customContextLabel : contextLabel(studio.contextProfile)} · ${kvLabel(studio.kvCache)}`;
   }
   syncActiveModelSummary(activeSummary);
   studio.root.querySelectorAll("[data-runtime-option]").forEach((button) => {
@@ -3686,11 +3701,14 @@ function createStudio() {
     delete studio.customSystemPrompts[profile];
     saveCustomSystemPrompts(localStorage, studio.customSystemPrompts);
     syncSystemPromptEditor(profile);
-    showToast("System Prompt reset", profile === "music3"
-      ? "Music 3 Caption is using its built-in system prompt."
-      : profile === "music3_lyrics"
-      ? "Music 3 Lyrics is using its built-in system prompt."
-      : `H3 Prompt Writer is using its default ${profile} instructions.`);
+    showToast(
+      msg("toast.system_prompt.reset.title"),
+      msg(profile === "music3"
+        ? "toast.system_prompt.reset.music3"
+        : profile === "music3_lyrics"
+        ? "toast.system_prompt.reset.music3_lyrics"
+        : "toast.system_prompt.reset.default", { profile }),
+    );
   }));
   root.querySelector("[data-thinking]").addEventListener("change", (event) => {
     studio.thinking = event.target.checked;
@@ -3723,7 +3741,10 @@ function createStudio() {
   root.querySelector("[data-model-refresh]").addEventListener("click", async () => {
     await refreshModels();
     const count = localModels().length;
-    showToast("Models refreshed", `${count} supported local model${count === 1 ? "" : "s"} found.`);
+    showToast(
+      msg("toast.models.refreshed.title"),
+      msg(count === 1 ? "models.refreshed.one" : "models.refreshed.other", { count }),
+    );
   });
   root.querySelector("[data-installed-model]").addEventListener("change", (event) => {
     selectModel(localModels().find((model) => model.id === event.target.value));
@@ -3763,7 +3784,7 @@ function createStudio() {
     if (copyOllamaCommand) {
       const command = copyOllamaCommand.dataset.copyOllamaCommand;
       navigator.clipboard.writeText(command);
-      showToast("Command copied", `${command} · paste it into Terminal or PowerShell.`);
+      showToast(msg("toast.copy.command.title"), msg("toast.copy.command.ollama", { command }));
       return;
     }
     const ollamaAddModel = event.target.closest("[data-ollama-add-model]");
@@ -3776,7 +3797,7 @@ function createStudio() {
     if (copyDirectRuntimeCommand) {
       const command = copyDirectRuntimeCommand.dataset.copyDirectRuntimeCommand;
       navigator.clipboard.writeText(command);
-      showToast("Command copied", "Paste it into PowerShell or CMD from the ComfyUI portable folder.");
+      showToast(msg("toast.copy.command.title"), msg("toast.copy.command.runtime"));
       return;
     }
     const externalDisconnect = event.target.closest("[data-external-server-disconnect]");
@@ -3800,7 +3821,7 @@ function createStudio() {
     const copyPath = event.target.closest("[data-copy-model-path]");
     if (copyPath) {
       navigator.clipboard.writeText(studio.modelDirectory || "ComfyUI/models/LLM/");
-      showToast("Model path copied", studio.modelDirectory || "ComfyUI/models/LLM/");
+      showToast(msg("toast.copy.model_path.title"), studio.modelDirectory || "ComfyUI/models/LLM/");
       return;
     }
   });
@@ -4131,10 +4152,10 @@ function installLauncher() {
   launcher.className = "h3ps-floating-launcher";
   launcher.dataset.h3psLauncher = "true";
   launcher.dataset.h3psLauncherVersion = LAUNCHER_SCHEMA_VERSION;
-  launcher.setAttribute("aria-label", "Open H3 Prompt Writer");
-  launcher.title = "Open H3 Prompt Writer · drag to move";
+  launcher.setAttribute("aria-label", t("launcher.open"));
+  launcher.title = t("launcher.open_title");
   const launcherIcon = new URL("./assets/h3-prompt-writer-launcher.svg", import.meta.url).href;
-  launcher.innerHTML = `<img src="${launcherIcon}" alt="H3 Prompt Writer">`;
+  launcher.innerHTML = `<img src="${launcherIcon}" alt="${t("launcher.alt")}">`;
   document.body.appendChild(launcher);
 
   const positionKey = "h3ps-launcher-position";
@@ -4277,6 +4298,12 @@ app.registerExtension({
   menuCommands: [{ path: ["Extensions", "H3 Prompt Writer"], commands: ["h3-prompt-studio.open", "h3-prompt-studio.media"] }],
   async setup() {
     injectStyles();
+    configureI18n({
+      preference: loadUserPreferences(localStorage)?.language || "auto",
+      app,
+      navigatorLanguage: navigator.language,
+      root: null,
+    });
     installVramHandoff(app, {
       isEnabled: vramHandoffIsEnabled,
       onQueueRequested: () => vramHandoffCoordinator.invalidateWriterAttempts(),
@@ -4285,5 +4312,13 @@ app.registerExtension({
       onQueueHandoffEnd: () => vramHandoffCoordinator.finishQueueHandoff(),
     });
     installLauncher();
+    onLocaleChange(() => {
+      const launcher = document.querySelector("[data-h3ps-launcher]");
+      if (!launcher) return;
+      launcher.setAttribute("aria-label", t("launcher.open"));
+      launcher.title = t("launcher.open_title");
+      const image = launcher.querySelector("img");
+      if (image) image.alt = t("launcher.alt");
+    });
   },
 });
