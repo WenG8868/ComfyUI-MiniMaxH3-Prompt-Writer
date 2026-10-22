@@ -10,6 +10,7 @@ import "./writer_async.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import vm from "node:vm";
 import "./composer_geometry.mjs";
 import "./editor_geometry.mjs";
 import "./editor_interactions.mjs";
@@ -1707,4 +1708,18 @@ test("only confirmed Writer ownership makes unknown router state a release targe
   assert.deepEqual(await unloadWriterModels({getStatus:async()=>status,unloadModel:async()=>assert.fail('no confirmed Writer residency')}),[]);
   status.prompt_residency.external.targets[0].writer_owned=true;
   assert.deepEqual(writerResidencyTargets(status),[{family:'external',model_id:'old'}]);
+});
+
+test("long Writer model requests opt out of the ComfyUI 60s fetch timeout",async()=>{
+  const h3studioSource=await readFile(new URL("../web/api/h3studio.js",import.meta.url),"utf8");
+  const calls=[];
+  const context=vm.createContext({
+    api:{fetchApi:async(path,options)=>{calls.push({path,options});return{ok:true,text:async()=>"{}"};}},
+    readApiResponse:async response=>JSON.parse(await response.text()),
+  });
+  vm.runInContext(h3studioSource.replace(/^import .*$/gm,"").replace(/\bexport\s+/g,"")+"\n;globalThis.__api={generate,refine,request};",context);
+  await context.__api.generate({mode:"T2VA"});
+  await context.__api.refine({});
+  assert.equal(calls.find(call=>call.path==="/h3studio/generate").options.timeoutMs,null);
+  assert.equal(calls.find(call=>call.path==="/h3studio/refine").options.timeoutMs,null);
 });

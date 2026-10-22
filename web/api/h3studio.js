@@ -8,13 +8,18 @@ async function request(path, options) {
   return readApiResponse(response);
 }
 
-function post(path, body = {}) {
+function post(path, body = {}, options = {}) {
   return request(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    ...options,
   });
 }
+
+// ComfyUI aborts fetchApi requests after 60s by default. Local prompt models
+// routinely need longer, so generation and refinement wait without a deadline.
+const noFetchTimeout = { timeoutMs: null };
 
 const ollamaQuery = (name, host) => host ? `?${name}=${encodeURIComponent(host)}` : "";
 
@@ -32,10 +37,10 @@ export const getGuides = () => request("/guides");
 export const getGuide = (mode) => request(`/guides/${encodeURIComponent(mode)}`);
 export const getSystemPrompt = (mode) => request(`/system-prompt/${encodeURIComponent(mode)}`);
 export const assemble = (payload) => post("/assemble", payload);
-export const generate = (payload) => post("/generate", payload);
+export const generate = (payload) => post("/generate", payload, noFetchTimeout);
 export const cancel = () => post("/cancel");
 export const unloadModel = (target = {}) => post("/unload", target);
-export const refine = (payload) => post("/refine", payload);
+export const refine = (payload) => post("/refine", payload, noFetchTimeout);
 
 export async function freeComfyVram() {
   const response = await api.fetchApi("/free", {
