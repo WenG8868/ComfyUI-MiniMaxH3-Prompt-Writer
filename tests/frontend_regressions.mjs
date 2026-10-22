@@ -5,7 +5,7 @@ import "./desktop_notifications.mjs";
 import { Window } from "happy-dom";
 import { generationButtonMarkup } from "../web/writer_controls.js";
 import { aspectRatioMarkup, splitMenuMarkup } from "../web/writer_controls.js";
-import { configureI18n, localizedError, messageText, msg, t } from "../web/i18n.js";
+import { configureI18n, localizedError, messageText, msg, setLanguagePreference, t } from "../web/i18n.js";
 import { writeToastContent } from "../web/toast.js";
 import { writeStatusContent } from "../web/status.js";
 import { settingsMarkup, generateModelSummaryMarkup } from "../web/settings.js";
@@ -1279,23 +1279,23 @@ test("Settings separates providers, installed models, diagnostics, and verified 
   assert.match(mainSource, /studio\.selectedModel\?\.family === "gguf"/);
   assert.doesNotMatch(mainSource, /\/api\/pull/);
   assert.doesNotMatch(mainSource, /Install .*Gemma|Cancel download|Downloading model/i);
-  assert.match(mainSource, /Compatible · not yet H3-tested/);
+  assert.match(mainSource, /t\("providers\.ollama\.not_tested"\)/);
   assert.match(mainSource, /data-copy-ollama-command/);
-  assert.match(mainSource, /Choose a model for your GPU/);
+  assert.match(mainSource, /t\("providers\.ollama\.choose_gpu"\)/);
   assert.match(mainSource, /<code>\$\{escapeHtml\(command\)\}<\/code>/);
   assert.match(mainSource, /h3ps-ollama-model-state/);
   assert.match(mainSource, /is-detected/);
-  assert.match(mainSource, /Detected/);
+  assert.match(mainSource, /t\("providers\.ollama\.detected"\)/);
   assert.doesNotMatch(mainSource, /Recommended for your GPU|Lighter model|Larger model/);
   assert.match(mainSource, /data-ollama-model/);
   assert.match(mainSource, /data-ollama-add-model/);
-  assert.match(mainSource, /\+ Add model/);
+  assert.match(mainSource, /t\("providers\.ollama\.add_model"\)/);
   assert.match(skinSource, /h3ps-root \.h3ps-ollama-add-model-toggle[^}]+color: var\(--h3ps-accent-strong\)[^}]+font-size: var\(--h3ps-font-label-sm\)[^}]+cursor: pointer/);
   assert.match(skinSource, /h3ps-ollama-model-select select[\s\S]{0,900}background-position: right 12px center[\s\S]{0,300}cursor: pointer/);
   assert.match(skinSource, /h3ps-api-model-select select[\s\S]{0,900}background-position: right 12px center[\s\S]{0,300}cursor: pointer/);
-  assert.match(mainSource, /Choose another tested model/);
+  assert.match(mainSource, /t\("providers\.ollama\.choose_another"\)/);
   assert.match(mainSource, /studio\.ollamaAddModelOpen = !studio\.ollamaAddModelOpen/);
-  assert.match(mainSource, /Need models on another drive\?/);
+  assert.match(mainSource, /t\("providers\.ollama\.storage_title"\)/);
   assert.match(mainSource, /OLLAMA_MODELS/);
   assert.match(mainSource, /syncOllamaAutoDetection/);
   assert.match(mainSource, /setTimeout\(\(\) => refreshOllama\(\{ automatic: true \}\), 4000\)/);
@@ -1307,10 +1307,149 @@ test("Settings separates providers, installed models, diagnostics, and verified 
   }
   assert.doesNotMatch(mainSource, /h3ps-provider-icon">[SO]<\/span>/);
   assert.match(mainSource, /data-api-provider-form/);
-  assert.match(mainSource, /The key is sent once to the local H3 backend/);
-  assert.match(mainSource, /Reasoning provider managed/);
+  assert.match(mainSource, /t\("providers\.api\.key_hint"\)/);
+  assert.match(mainSource, /t\("toast\.generation\.reasoning_managed"\)/);
   assert.match(mainSource, /label\.hidden = apiManaged/);
   assert.doesNotMatch(mainSource, /credential_source|environment_name|Not analyzed locally|Exclude from AI analysis|data-analysis-asset/);
+});
+
+test("provider panels are translation-driven", () => {
+  assert.match(mainSource, /noteKey: "providers\.api\.note\.gemini"/);
+  assert.match(mainSource, /function apiProviderName\(provider\)/);
+  assert.match(mainSource, /t\("providers\.external\.connect_hint"\)/);
+  assert.match(mainSource, /t\("providers\.ollama\.get_title"\)/);
+  assert.match(mainSource, /t\("providers\.api\.disclosure_title"\)/);
+  assert.match(mainSource, /showErrorToast\("toast\.api\.failed\.title"/);
+});
+
+test("provider panel copy follows locale changes without replacing form state", () => {
+  const panelWindow = new Window();
+  const panelRoot = panelWindow.document.createElement("div");
+  panelWindow.document.body.append(panelRoot);
+  const panelStart = mainSource.indexOf("function renderExternalServerControl()");
+  const panelEnd = mainSource.indexOf("function setOtherModelsPopover(");
+  assert.ok(panelStart >= 0 && panelEnd > panelStart, "provider panel render functions are present");
+  const state = {
+    root: panelRoot,
+    externalModel: {
+      name: "meta/llama",
+      endpoint: "http://127.0.0.1:8080",
+      remote_model: "llama",
+      server_context_tokens: 16384,
+      context_verified: true,
+    },
+    externalServerConfig: { url: "http://127.0.0.1:8080", model: "llama" },
+    externalServerError: null,
+    ollamaHost: "http://127.0.0.1:11434",
+    ollamaHostSettingsOpen: false,
+    ollamaStorageHelpOpen: false,
+    ollamaAddModelOpen: false,
+    ollamaStatus: {
+      state: "ready",
+      version: "0.9.1",
+      compatible_models: [
+        { id: "ollama:alpha", remote_model: "alpha", name: "alpha", tested_for_h3: false },
+        { id: "ollama:beta", remote_model: "beta", name: "beta", tested_for_h3: true, thinking_detected: true },
+      ],
+    },
+    ollamaModelName: "alpha",
+    gpuMemory: { total_mb: 8192 },
+    apiProviderConfig: { preset: "gemini", gemini_reasoning_effort: "minimal" },
+    apiProviderPresets: [],
+    apiProviderConnection: {
+      provider_name: "Gemini",
+      base_url: "https://generativelanguage.googleapis.com/v1beta",
+      key_hint: "",
+      connection_verified: true,
+      reasoning_effort: "minimal",
+    },
+    apiProviderModels: [{
+      id: "api:gemini:gemini-2.5-pro",
+      remote_model: "gemini-2.5-pro",
+      name: "gemini-2.5-pro",
+      capabilities: { images: true },
+      model_context_limit: 1048576,
+    }],
+    apiProviderError: null,
+  };
+  const factory = new Function(
+    "studio", "t", "escapeHtml", "icon", "DEFAULT_OLLAMA_HOST", "detectedVramTier", "reasoningLabel",
+    `${mainSource.slice(panelStart, panelEnd)}
+     return { renderExternalServerControl, renderOllamaProviderControl, renderApiProviderControl, syncProviderPanelCopy };`,
+  );
+  const escape = (value) => String(value)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const panels = factory(
+    state,
+    t,
+    escape,
+    (name) => `<svg data-icon="${name}"></svg>`,
+    "http://127.0.0.1:11434",
+    () => "under-8",
+    (value) => (value === "auto" ? t("settings.auto") : value[0].toUpperCase() + value.slice(1)),
+  );
+  configureI18n({ preference: "en", root: panelRoot, navigatorLanguage: "en-US" });
+  try {
+    panelRoot.innerHTML = `
+      <div data-external-provider-control>${panels.renderExternalServerControl()}</div>
+      <div data-ollama-provider-control>${panels.renderOllamaProviderControl()}</div>
+      <div data-api-provider-control>${panels.renderApiProviderControl()}</div>`;
+    const externalForm = panelRoot.querySelector("[data-external-server-form]");
+    const modelInput = externalForm.querySelector('input[name="model"]');
+    externalForm.querySelector('input[name="url"]').value = "http://10.0.0.9:8080";
+    modelInput.value = "draft-model";
+    externalForm.querySelector('input[name="api_key"]').value = "draft-key";
+    modelInput.focus();
+    modelInput.setSelectionRange(2, 6);
+    const ollamaSelect = panelRoot.querySelector("[data-ollama-model]");
+    ollamaSelect.selectedIndex = 1;
+    assert.equal(panelRoot.querySelector('[data-provider-dynamic="external-state"]').textContent, "http://127.0.0.1:8080 · 16K context");
+    assert.equal(panelRoot.querySelector('[data-provider-dynamic="ollama-version"]').textContent, "Version 0.9.1 · local service");
+    assert.equal(panelRoot.querySelector(".h3ps-api-disclosure strong").textContent, "What leaves this computer");
+
+    setLanguagePreference("zh-CN");
+    panels.syncProviderPanelCopy();
+
+    assert.equal(panelRoot.querySelector('[data-provider-dynamic="external-state"]').textContent, "http://127.0.0.1:8080 · 16K 上下文");
+    assert.equal(panelRoot.querySelector(".h3ps-external-connection-status > em").textContent, "已连接");
+    assert.equal(panelRoot.querySelector("[data-external-server-form] small").textContent, "仅限本机。上下文与 KV 缓存由服务器管理。模型生命周期控制需要 llama.cpp 路由器。");
+    assert.equal(panelRoot.querySelector('[data-external-server-form] button[type="submit"]').textContent, "重新连接");
+    assert.equal(panelRoot.querySelector('[data-external-server-form] input[name="model"]').placeholder, "服务器列出多个模型时必填");
+    assert.equal(panelRoot.querySelector('[data-provider-dynamic="ollama-version"]').textContent, "版本 0.9.1 · 本地服务");
+    assert.equal(panelRoot.querySelector(".h3ps-api-disclosure strong").textContent, "哪些数据会离开此电脑");
+    assert.equal(panelRoot.querySelector(".h3ps-api-badges span:last-child").textContent, "供应商管理");
+    assert.match(panelRoot.querySelector('[data-provider-dynamic="api-connected-meta"]').textContent, /无密钥$/);
+    assert.equal(externalForm.querySelector('input[name="url"]').value, "http://10.0.0.9:8080");
+    assert.equal(modelInput.value, "draft-model");
+    assert.equal(externalForm.querySelector('input[name="api_key"]').value, "draft-key");
+    assert.equal(panelWindow.document.activeElement, modelInput);
+    assert.equal(modelInput.selectionStart, 2);
+    assert.equal(modelInput.selectionEnd, 6);
+    assert.equal(ollamaSelect.selectedIndex, 1);
+    assert.equal(ollamaSelect.value, "beta");
+
+    state.apiProviderConnection = null;
+    state.apiProviderConfig = {
+      preset: "custom",
+      base_url: "",
+      model_id: "",
+      gemini_reasoning_effort: "minimal",
+      custom_images: false,
+      custom_context_tokens: null,
+    };
+    const customContainer = panelWindow.document.createElement("div");
+    panelRoot.append(customContainer);
+    customContainer.innerHTML = `<div data-api-provider-control>${panels.renderApiProviderControl()}</div>`;
+    const customPreset = customContainer.querySelector('[data-api-preset="custom"]');
+    assert.equal(customPreset.querySelector("strong").textContent, "自定义");
+    assert.equal(customContainer.querySelector(".h3ps-api-intro strong").textContent, "连接 自定义");
+    setLanguagePreference("en");
+    panels.syncProviderPanelCopy();
+    assert.equal(customPreset.querySelector("strong").textContent, "Custom");
+    assert.equal(customContainer.querySelector(".h3ps-api-intro strong").textContent, "Connect Custom");
+  } finally {
+    configureI18n({ preference: "en", root: panelRoot, navigatorLanguage: "en-US" });
+  }
 });
 
 test("Reference defaults use plain Picture 1 and Video 1 text while canonical tags remain user-authored", () => {
@@ -1361,8 +1500,8 @@ test("Settings shows compact global System Prompt summaries and an on-demand edi
   assert.match(mainSource, /msg\("lifecycle\.unload_direct"\)/);
   assert.match(mainSource, /msg\("lifecycle\.stop_unload"\)/);
   assert.doesNotMatch(mainSource, /Stop request/);
-  assert.match(mainSource, /Checking…/);
-  assert.match(mainSource, /Ollama is not running/);
+  assert.match(mainSource, /t\("providers\.ollama\.checking"\)/);
+  assert.match(mainSource, /msg\(status\.state === "not_installed" \? "toast\.ollama\.not_installed" : "toast\.ollama\.not_running"\)/);
   const summaryMarkup = generateModelSummaryMarkup(() => "");
   assert.match(summaryMarkup, /data-i18n-title="settings\.open_model"/);
   assert.match(summaryMarkup, /data-i18n="models\.prompt_model"/);

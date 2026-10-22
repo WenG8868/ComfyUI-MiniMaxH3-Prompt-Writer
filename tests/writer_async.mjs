@@ -203,7 +203,9 @@ function providerController(overrides = {}) {
     "connectConfiguredApiProvider", "disconnectConfiguredApiProvider", "chooseApiProviderPreset",
     "refreshApiProviderModels", "connectExternalServer", "disconnectExternalServer", "refreshModels",
   ], {
-    studio, localStorage: {}, showToast() {}, renderInferenceSettings() {}, syncRuntimeSummary() {},
+    studio, localStorage: {}, t, msg, showToast() {}, showErrorToast() {},
+    DEFAULT_OLLAMA_HOST: "http://127.0.0.1:11434",
+    renderInferenceSettings() {}, syncRuntimeSummary() {},
     saveUserPreferences() {}, saveApiProviderConfig() {}, saveExternalServerConfig() {},
     apiProviderModelForSettings: () => null, disconnectApiProvider: async () => {},
     selectModel: (model) => { studio.selectedModel = model; studio.modelSelectionRevision++; },

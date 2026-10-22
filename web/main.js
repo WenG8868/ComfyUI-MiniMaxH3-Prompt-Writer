@@ -1835,28 +1835,31 @@ function renderOtherModelsTrigger() {
 function renderExternalServerControl() {
   const connected = studio.externalModel;
   const config = studio.externalServerConfig || { url: "http://127.0.0.1:8080", model: "" };
-  const title = connected ? connected.name.split("/").pop() : "External llama.cpp server";
-  const contextLabel = connected?.context_verified !== false && Number.isFinite(connected?.server_context_tokens)
-    ? ` · ${Math.round(connected.server_context_tokens / 1024)}K context`
+  const title = connected ? connected.name.split("/").pop() : t("providers.external.title");
+  const contextSuffix = connected?.context_verified !== false && Number.isFinite(connected?.server_context_tokens)
+    ? ` · ${t("providers.external.context", { tokens: Math.round(connected.server_context_tokens / 1024) })}`
     : "";
   const state = connected
-    ? `${connected.endpoint}${contextLabel}`
+    ? `${connected.endpoint}${contextSuffix}`
     : studio.externalServerError
-      ? "Saved server is offline"
-      : "Connect to a model already running in llama-server";
+      ? t("providers.external.offline_saved")
+      : t("providers.external.connect_hint");
+  const statusKey = connected
+    ? "providers.status.connected"
+    : studio.externalServerError ? "providers.status.offline" : "providers.status.not_connected";
   return `
     <div class="h3ps-external-connection ${connected ? "is-connected" : ""}">
       <div class="h3ps-external-connection-status">
         <span class="h3ps-provider-icon" data-provider-icon="external" aria-hidden="true"></span>
-        <span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(state)}</small></span>
-        <em>${connected ? "Connected" : studio.externalServerError ? "Offline" : "Not connected"}</em>
+        <span><strong${connected ? "" : ' data-i18n="providers.external.title"'}>${escapeHtml(title)}</strong><small data-provider-dynamic="external-state">${escapeHtml(state)}</small></span>
+        <em data-i18n="${statusKey}">${t(statusKey)}</em>
       </div>
       <form data-external-server-form>
-        <label><span>Server URL</span><input name="url" type="url" value="${escapeHtml(config.url)}" placeholder="http://127.0.0.1:8080" required></label>
-        <label><span>Model ID <em>optional</em></span><input name="model" type="text" value="${escapeHtml(config.model)}" placeholder="Required when the server lists multiple models"></label>
-        <label><span>API key <em>optional</em></span><input name="api_key" type="password" autocomplete="off" placeholder="Blank reuses the key held in server memory"></label>
-        <small>Localhost only. Context and KV cache stay server-managed. Model lifecycle controls require a llama.cpp router.</small>
-        <div><button type="button" data-external-server-disconnect ${connected || studio.externalServerConfig ? "" : "hidden"}>Disconnect</button><span></span><button type="submit">${connected ? "Reconnect" : "Connect"}</button></div>
+        <label><span data-i18n="providers.external.url">${t("providers.external.url")}</span><input name="url" type="url" value="${escapeHtml(config.url)}" placeholder="http://127.0.0.1:8080" required></label>
+        <label><span><span data-i18n="providers.external.model_id">${t("providers.external.model_id")}</span> <em data-i18n="providers.optional">${t("providers.optional")}</em></span><input name="model" type="text" value="${escapeHtml(config.model)}" placeholder="${escapeHtml(t("providers.external.model_placeholder"))}" data-i18n-placeholder="providers.external.model_placeholder"></label>
+        <label><span><span data-i18n="providers.external.api_key">${t("providers.external.api_key")}</span> <em data-i18n="providers.optional">${t("providers.optional")}</em></span><input name="api_key" type="password" autocomplete="off" placeholder="${escapeHtml(t("providers.external.key_placeholder"))}" data-i18n-placeholder="providers.external.key_placeholder"></label>
+        <small data-i18n="providers.external.note">${t("providers.external.note")}</small>
+        <div><button type="button" data-external-server-disconnect ${connected || studio.externalServerConfig ? "" : "hidden"} data-i18n="providers.external.disconnect">${t("providers.external.disconnect")}</button><span></span><button type="submit" data-i18n="${connected ? "providers.external.reconnect" : "providers.external.connect"}">${connected ? t("providers.external.reconnect") : t("providers.external.connect")}</button></div>
       </form>
     </div>`;
 }
@@ -1875,21 +1878,24 @@ function ollamaModelForSettings() {
 
 function ollamaHostControlMarkup(hostValue = studio.ollamaHost) {
   const custom = studio.ollamaHost !== DEFAULT_OLLAMA_HOST;
+  const summary = custom
+    ? t("providers.ollama.remote_host", { host: escapeHtml(studio.ollamaHost) })
+    : t("providers.ollama.use_remote");
   return `<details class="h3ps-ollama-host-settings" data-ollama-host-settings ${studio.ollamaHostSettingsOpen ? "open" : ""}>
-    <summary>${custom ? `Remote host · ${escapeHtml(studio.ollamaHost)}` : "Use Ollama on another computer"}</summary>
+    <summary data-provider-dynamic="ollama-host-summary">${summary}</summary>
     <form data-ollama-host-form>
-      <label><span>Host URL</span><input name="host" type="url" value="${escapeHtml(hostValue)}" placeholder="${DEFAULT_OLLAMA_HOST}" required></label>
-      <button type="submit">Apply</button>
+      <label><span data-i18n="providers.ollama.host_url">${t("providers.ollama.host_url")}</span><input name="host" type="url" value="${escapeHtml(hostValue)}" placeholder="${DEFAULT_OLLAMA_HOST}" required></label>
+      <button type="submit" data-i18n="providers.ollama.apply">${t("providers.ollama.apply")}</button>
     </form>
-    <small>Keep the default URL for Ollama on this computer. Remote hosts must allow connections from this machine.</small>
+    <small data-i18n="providers.ollama.host_note">${t("providers.ollama.host_note")}</small>
   </details>`;
 }
 
 function ollamaJourneyMarkup(step) {
-  const steps = [["service", "Ollama"], ["model", "Prompt model"], ["ready", "Ready"]];
+  const steps = [["service", "providers.ollama.title"], ["model", "models.prompt_model"], ["ready", "providers.ollama.step_ready"]];
   const current = steps.findIndex(([name]) => name === step);
-  return `<ol class="h3ps-ollama-journey">${steps.map(([name, label], index) => `
-    <li class="${index < current ? "is-complete" : index === current ? "is-current" : ""}"><span>${index + 1}</span><em>${label}</em></li>`).join("")}</ol>`;
+  return `<ol class="h3ps-ollama-journey">${steps.map(([name, key], index) => `
+    <li class="${index < current ? "is-complete" : index === current ? "is-current" : ""}"><span>${index + 1}</span><em data-i18n="${key}">${t(key)}</em></li>`).join("")}</ol>`;
 }
 
 function ollamaDetectedTier() {
@@ -1908,8 +1914,8 @@ function renderOllamaModelTiers(status) {
     return `<div class="h3ps-ollama-tier-row ${isDetected ? "is-detected" : ""}">
       <span class="h3ps-ollama-tier-vram">${escapeHtml(tier.label)}</span>
       <code>${escapeHtml(command)}</code>
-      ${isDetected ? "<em>Detected</em>" : "<span></span>"}
-      <button type="button" data-copy-ollama-command="${escapeHtml(command)}" title="Copy ${escapeHtml(command)}" aria-label="Copy ${escapeHtml(command)}">${icon("copy", 13)}</button>
+      ${isDetected ? `<em data-i18n="providers.ollama.detected">${t("providers.ollama.detected")}</em>` : "<span></span>"}
+      <button type="button" data-copy-ollama-command="${escapeHtml(command)}" data-provider-dynamic="ollama-copy-command" data-command="${escapeHtml(command)}" title="${escapeHtml(t("providers.ollama.copy_command_title", { command }))}" aria-label="${escapeHtml(t("providers.ollama.copy_command_title", { command }))}">${icon("copy", 13)}</button>
     </div>`;
   }).join("")}</div>`;
 }
@@ -1918,66 +1924,70 @@ function renderOllamaProviderControl(hostValue) {
   const status = studio.ollamaStatus;
   const hostControl = ollamaHostControlMarkup(hostValue);
   const remoteHost = studio.ollamaHost !== DEFAULT_OLLAMA_HOST;
-  const serviceLabel = remoteHost ? "Remote service" : "Local service";
+  const serviceKey = remoteHost ? "providers.ollama.remote_service" : "providers.ollama.local_service";
+  const serviceLabel = t(serviceKey);
   if (!status) {
-    return `<header class="h3ps-settings-section-heading"><span><small>${serviceLabel}</small><strong>Ollama</strong></span></header>
-      ${ollamaJourneyMarkup("service")}<div class="h3ps-ollama-state"><span class="h3ps-spinner"></span><span class="h3ps-ollama-state-copy"><strong>Checking Ollama…</strong><p>${remoteHost ? "Looking for the selected service and installed models." : "Looking for the local service and installed models."}</p></span></div>${hostControl}`;
+    return `<header class="h3ps-settings-section-heading"><span><small data-i18n="${serviceKey}">${serviceLabel}</small><strong data-i18n="providers.ollama.title">${t("providers.ollama.title")}</strong></span></header>
+      ${ollamaJourneyMarkup("service")}<div class="h3ps-ollama-state"><span class="h3ps-spinner"></span><span class="h3ps-ollama-state-copy"><strong data-i18n="providers.ollama.checking">${t("providers.ollama.checking")}</strong><p data-i18n="${remoteHost ? "providers.ollama.looking_remote" : "providers.ollama.looking_local"}">${remoteHost ? t("providers.ollama.looking_remote") : t("providers.ollama.looking_local")}</p></span></div>${hostControl}`;
   }
   const ready = status.state === "ready";
-  const refresh = ready ? `<button type="button" data-ollama-refresh>${icon("refresh", 13)} Refresh</button>` : "";
-  const header = `<header class="h3ps-settings-section-heading"><span><small>${serviceLabel}</small><strong>Ollama</strong></span>${refresh}</header>`;
+  const refresh = ready ? `<button type="button" data-ollama-refresh>${icon("refresh", 13)} <span data-i18n="providers.ollama.refresh">${t("providers.ollama.refresh")}</span></button>` : "";
+  const header = `<header class="h3ps-settings-section-heading"><span><small data-i18n="${serviceKey}">${serviceLabel}</small><strong data-i18n="providers.ollama.title">${t("providers.ollama.title")}</strong></span>${refresh}</header>`;
   if (status.state === "not_installed") {
     return `${header}${ollamaJourneyMarkup("service")}<div class="h3ps-ollama-state">
-      <span class="h3ps-ollama-state-icon">1</span><span class="h3ps-ollama-state-copy"><strong>Get Ollama</strong>
-      <p>Install the official Ollama app, open it once, then return here. This page will detect it automatically.</p></span>
-      <a class="h3ps-ollama-primary" href="https://ollama.com/download" target="_blank" rel="noopener noreferrer">Official download ↗</a>
+      <span class="h3ps-ollama-state-icon">1</span><span class="h3ps-ollama-state-copy"><strong data-i18n="providers.ollama.get_title">${t("providers.ollama.get_title")}</strong>
+      <p data-i18n="providers.ollama.get_body">${t("providers.ollama.get_body")}</p></span>
+      <a class="h3ps-ollama-primary" href="https://ollama.com/download" target="_blank" rel="noopener noreferrer" data-i18n="providers.ollama.official_download">${t("providers.ollama.official_download")}</a>
     </div>${hostControl}`;
   }
   if (status.state === "not_running") {
     return `${header}${ollamaJourneyMarkup("service")}<div class="h3ps-ollama-state">
-      <span class="h3ps-ollama-state-icon">1</span><span class="h3ps-ollama-state-copy"><strong>Start Ollama</strong>
-      <p>${remoteHost ? `The Ollama service at ${escapeHtml(studio.ollamaHost)} is not responding.` : "Ollama is installed, but its local service is not responding. Open the Ollama app; this page checks automatically."}</p></span>
-      <button class="h3ps-ollama-primary" type="button" data-ollama-refresh>Check now</button>
+      <span class="h3ps-ollama-state-icon">1</span><span class="h3ps-ollama-state-copy"><strong data-i18n="providers.ollama.start_title">${t("providers.ollama.start_title")}</strong>
+      <p ${remoteHost ? 'data-provider-dynamic="ollama-remote-not-responding"' : 'data-i18n="providers.ollama.not_responding"'}>${remoteHost ? t("providers.ollama.remote_not_responding", { host: escapeHtml(studio.ollamaHost) }) : t("providers.ollama.not_responding")}</p></span>
+      <button class="h3ps-ollama-primary" type="button" data-ollama-refresh data-i18n="providers.ollama.check_now">${t("providers.ollama.check_now")}</button>
     </div>${hostControl}`;
   }
   if (status.state === "error") {
     return `${header}${ollamaJourneyMarkup("service")}<div class="h3ps-ollama-state is-error">
-      <span class="h3ps-ollama-state-icon">!</span><span class="h3ps-ollama-state-copy"><strong>Ollama could not be inspected</strong>
-      <p>${escapeHtml(status.error?.message || "The service returned an unexpected response.")}</p></span>
-      <button class="h3ps-ollama-primary" type="button" data-ollama-refresh>Try again</button>
+      <span class="h3ps-ollama-state-icon">!</span><span class="h3ps-ollama-state-copy"><strong data-i18n="providers.ollama.inspect_failed">${t("providers.ollama.inspect_failed")}</strong>
+      <p data-provider-dynamic="ollama-error-message">${escapeHtml(status.error?.message || t("providers.ollama.unexpected"))}</p></span>
+      <button class="h3ps-ollama-primary" type="button" data-ollama-refresh data-i18n="providers.ollama.try_again">${t("providers.ollama.try_again")}</button>
     </div>${hostControl}`;
   }
   const models = ollamaModels();
   if (!models.length) {
     return `${header}${ollamaJourneyMarkup("model")}<div class="h3ps-ollama-state h3ps-ollama-model-state">
-      <span class="h3ps-ollama-state-copy"><strong>Add a compatible prompt model</strong>
-      <p>Ollama is running, but no installed model reports both vision and text generation support.</p>
-      <div class="h3ps-ollama-tier-heading">Choose a model for your GPU</div>
+      <span class="h3ps-ollama-state-copy"><strong data-i18n="providers.ollama.add_title">${t("providers.ollama.add_title")}</strong>
+      <p data-i18n="providers.ollama.add_body">${t("providers.ollama.add_body")}</p>
+      <div class="h3ps-ollama-tier-heading" data-i18n="providers.ollama.choose_gpu">${t("providers.ollama.choose_gpu")}</div>
       ${renderOllamaModelTiers(status)}
-      <small>Copy a command and run it in Terminal or PowerShell. This page detects the model automatically.</small>
-      <details class="h3ps-ollama-storage-help" data-ollama-storage-help ${studio.ollamaStorageHelpOpen ? "open" : ""}><summary>Need models on another drive?</summary><p>Ollama manages one global model store. Set <code>OLLAMA_MODELS</code> before pulling a model, then restart Ollama. <a href="https://docs.ollama.com/windows#changing-model-location" target="_blank" rel="noopener noreferrer">Official instructions ↗</a></p></details></span>
+      <small data-i18n="providers.ollama.copy_hint">${t("providers.ollama.copy_hint")}</small>
+      <details class="h3ps-ollama-storage-help" data-ollama-storage-help ${studio.ollamaStorageHelpOpen ? "open" : ""}><summary data-i18n="providers.ollama.storage_title">${t("providers.ollama.storage_title")}</summary><p><span data-i18n="providers.ollama.storage_before">${t("providers.ollama.storage_before")}</span> <code>OLLAMA_MODELS</code><span data-i18n="providers.ollama.storage_after">${t("providers.ollama.storage_after")}</span> <a href="https://docs.ollama.com/windows#changing-model-location" target="_blank" rel="noopener noreferrer" data-i18n="providers.ollama.official_instructions">${t("providers.ollama.official_instructions")}</a></p></details></span>
     </div>${hostControl}`;
   }
   const selected = ollamaModelForSettings();
   const tested = selected?.tested_for_h3 === true;
   const addModelOpen = studio.ollamaAddModelOpen === true;
   return `${header}${ollamaJourneyMarkup("ready")}<div class="h3ps-ollama-ready">
-    <div class="h3ps-ollama-ready-heading"><span class="h3ps-provider-icon" data-provider-icon="ollama" aria-hidden="true"></span><span><strong>Ollama is ready</strong><small>Version ${escapeHtml(status.version || "unknown")} · ${remoteHost ? escapeHtml(studio.ollamaHost) : "local service"}</small></span><em>Running</em></div>
-    <div class="h3ps-ollama-model-heading"><span>Prompt model</span><button class="h3ps-ollama-add-model-toggle" type="button" data-ollama-add-model aria-expanded="${String(addModelOpen)}">${addModelOpen ? "− Hide models" : "+ Add model"}</button></div>
+    <div class="h3ps-ollama-ready-heading"><span class="h3ps-provider-icon" data-provider-icon="ollama" aria-hidden="true"></span><span><strong data-i18n="providers.ollama.ready">${t("providers.ollama.ready")}</strong><small data-provider-dynamic="ollama-version">${t("providers.ollama.version", { version: escapeHtml(status.version || t("models.unknown")), host: remoteHost ? escapeHtml(studio.ollamaHost) : t("providers.ollama.local_service_lower") })}</small></span><em data-i18n="providers.ollama.running">${t("providers.ollama.running")}</em></div>
+    <div class="h3ps-ollama-model-heading"><span data-i18n="models.prompt_model">${t("models.prompt_model")}</span><button class="h3ps-ollama-add-model-toggle" type="button" data-ollama-add-model aria-expanded="${String(addModelOpen)}" data-i18n="${addModelOpen ? "providers.ollama.hide_models" : "providers.ollama.add_model"}">${addModelOpen ? t("providers.ollama.hide_models") : t("providers.ollama.add_model")}</button></div>
     <label class="h3ps-ollama-model-select"><select data-ollama-model>${models.map((model) => `<option value="${escapeHtml(model.remote_model)}" ${model.remote_model === selected?.remote_model ? "selected" : ""}>${escapeHtml(model.name)}${model.parameter_size ? ` · ${escapeHtml(model.parameter_size)}` : ""}${model.quantization_level ? ` · ${escapeHtml(model.quantization_level)}` : ""}</option>`).join("")}</select></label>
-    ${addModelOpen ? `<div class="h3ps-ollama-add-model"><strong>Choose another tested model</strong>${renderOllamaModelTiers(status)}<small>Copy a command and run it in Terminal or PowerShell. Select Refresh after the pull completes.</small></div>` : ""}
-    <div class="h3ps-ollama-badges"><span>Vision</span><span>${selected?.thinking_detected ? "Thinking detected" : "Standard generation"}</span><span class="${tested ? "is-tested" : ""}">${tested ? "Tested for H3" : "Compatible · not yet H3-tested"}</span></div>
-    <p>${tested ? "This exact Ollama tag passed the focused H3 Generate and Refine smoke test." : "Compatibility comes from Ollama model metadata. It is not a quality guarantee for H3 prompts."}</p>
-    <small>Use “Keep model loaded” on the Generate page to control whether Ollama retains this model after each request.</small>
+    ${addModelOpen ? `<div class="h3ps-ollama-add-model"><strong data-i18n="providers.ollama.choose_another">${t("providers.ollama.choose_another")}</strong>${renderOllamaModelTiers(status)}<small data-i18n="providers.ollama.copy_after">${t("providers.ollama.copy_after")}</small></div>` : ""}
+    <div class="h3ps-ollama-badges"><span data-i18n="providers.ollama.vision">${t("providers.ollama.vision")}</span><span data-i18n="${selected?.thinking_detected ? "providers.ollama.thinking_detected" : "providers.ollama.standard"}">${selected?.thinking_detected ? t("providers.ollama.thinking_detected") : t("providers.ollama.standard")}</span><span class="${tested ? "is-tested" : ""}" data-i18n="${tested ? "providers.ollama.tested" : "providers.ollama.not_tested"}">${tested ? t("providers.ollama.tested") : t("providers.ollama.not_tested")}</span></div>
+    <p data-i18n="${tested ? "providers.ollama.tested_body" : "providers.ollama.untested_body"}">${tested ? t("providers.ollama.tested_body") : t("providers.ollama.untested_body")}</p>
+    <small data-i18n="providers.ollama.keep_loaded">${t("providers.ollama.keep_loaded")}</small>
   </div>${hostControl}`;
 }
 
 const API_PROVIDER_UI = {
-  gemini: { name: "Gemini", icon: "api-gemini", note: "Google API", keyUrl: "https://aistudio.google.com/api-keys" },
-  openai: { name: "OpenAI", icon: "api-openai", note: "OpenAI API", keyUrl: "https://platform.openai.com/api-keys" },
-  openrouter: { name: "OpenRouter", icon: "api-openrouter", note: "Multi-provider gateway", keyUrl: "https://openrouter.ai/settings/keys" },
-  custom: { name: "Custom", icon: "api-custom", note: "Generic OpenAI-compatible", keyUrl: null },
+  gemini: { name: "Gemini", icon: "api-gemini", noteKey: "providers.api.note.gemini", keyUrl: "https://aistudio.google.com/api-keys" },
+  openai: { name: "OpenAI", icon: "api-openai", noteKey: "providers.api.note.openai", keyUrl: "https://platform.openai.com/api-keys" },
+  openrouter: { name: "OpenRouter", icon: "api-openrouter", noteKey: "providers.api.note.openrouter", keyUrl: "https://openrouter.ai/settings/keys" },
+  custom: { nameKey: "providers.api.name.custom", icon: "api-custom", noteKey: "providers.api.note.custom", keyUrl: null },
 };
+function apiProviderName(provider) {
+  return provider.nameKey ? t(provider.nameKey) : provider.name;
+}
 
 function apiProviderModelForSettings() {
   if (studio.selectedModel?.family === "api") {
@@ -1998,13 +2008,13 @@ function renderApiProviderControl() {
   const model = apiProviderModelForSettings();
   const providerChoices = Object.entries(API_PROVIDER_UI).map(([id, provider]) => `
     <button type="button" class="h3ps-api-preset ${id === config.preset ? "is-selected" : ""}" data-api-preset="${id}">
-      <span class="h3ps-provider-icon" data-provider-icon="${provider.icon}" aria-hidden="true"></span><span><strong>${provider.name}</strong><small>${provider.note}</small></span>${icon("check", 13)}
+      <span class="h3ps-provider-icon" data-provider-icon="${provider.icon}" aria-hidden="true"></span><span><strong${provider.nameKey ? ` data-i18n="${provider.nameKey}"` : ""}>${apiProviderName(provider)}</strong><small data-i18n="${provider.noteKey}">${t(provider.noteKey)}</small></span>${icon("check", 13)}
     </button>`).join("");
-  const header = `<header class="h3ps-settings-section-heading"><span><small>OpenAI-compatible</small><strong>API providers</strong></span></header>`;
-  const disclosure = `<div class="h3ps-api-disclosure"><strong>What leaves this computer</strong><p>The provider receives your brief, H3 instructions, prepared images and one derived contact sheet per video in the current manifest. Original videos and audio bytes are not uploaded.</p>${config.preset === "openrouter" ? "<small>OpenRouter forwards the request to an upstream model provider with its own data policy.</small>" : ""}</div>`;
+  const header = `<header class="h3ps-settings-section-heading"><span><small data-i18n="providers.api.kicker">${t("providers.api.kicker")}</small><strong data-i18n="settings.api">${t("settings.api")}</strong></span></header>`;
+  const disclosure = `<div class="h3ps-api-disclosure"><strong data-i18n="providers.api.disclosure_title">${t("providers.api.disclosure_title")}</strong><p data-i18n="providers.api.disclosure_body">${t("providers.api.disclosure_body")}</p>${config.preset === "openrouter" ? `<small data-i18n="providers.api.disclosure_openrouter">${t("providers.api.disclosure_openrouter")}</small>` : ""}</div>`;
   const policyLinks = [
-    providerMetadata.pricing_url ? `<a href="${escapeHtml(providerMetadata.pricing_url)}" target="_blank" rel="noopener noreferrer">Pricing ↗</a>` : "",
-    providerMetadata.privacy_url ? `<a href="${escapeHtml(providerMetadata.privacy_url)}" target="_blank" rel="noopener noreferrer">Data policy ↗</a>` : "",
+    providerMetadata.pricing_url ? `<a href="${escapeHtml(providerMetadata.pricing_url)}" target="_blank" rel="noopener noreferrer" data-i18n="providers.api.pricing">${t("providers.api.pricing")}</a>` : "",
+    providerMetadata.privacy_url ? `<a href="${escapeHtml(providerMetadata.privacy_url)}" target="_blank" rel="noopener noreferrer" data-i18n="providers.api.privacy">${t("providers.api.privacy")}</a>` : "",
   ].filter(Boolean).join("");
   if (connection) {
     const models = studio.apiProviderModels.length ? studio.apiProviderModels : model ? [model] : [];
@@ -2013,31 +2023,82 @@ function renderApiProviderControl() {
       <div class="h3ps-api-setup">
         <div class="h3ps-api-connected">
           <span class="h3ps-provider-icon" data-provider-icon="${selectedPreset.icon}" aria-hidden="true"></span>
-          <span><strong>${escapeHtml(connection.provider_name)}</strong><small>${escapeHtml(connection.base_url)} · ${escapeHtml(connection.key_hint || "no key")}${connection.compatibility_profile === "lm_studio" ? " · LM Studio detected" : ""}</small></span>
-          <em>${connection.connection_verified ? "Connected" : "Configured"}</em>
+          <span><strong>${escapeHtml(connection.provider_name)}</strong><small data-provider-dynamic="api-connected-meta">${escapeHtml(connection.base_url)} · ${escapeHtml(connection.key_hint || t("providers.api.no_key"))}${connection.compatibility_profile === "lm_studio" ? ` · ${t("providers.api.lm_studio")}` : ""}</small></span>
+          <em data-i18n="${connection.connection_verified ? "providers.status.connected" : "providers.api.configured"}">${connection.connection_verified ? t("providers.status.connected") : t("providers.api.configured")}</em>
         </div>
-        <label class="h3ps-api-model-select"><span>Model</span><select data-api-model>${models.map((item) => `<option value="${escapeHtml(item.remote_model)}" ${item.remote_model === model?.remote_model ? "selected" : ""}>${escapeHtml(item.name)}${item.model_context_limit ? ` · ${Math.round(item.model_context_limit / 1024)}K` : ""}</option>`).join("")}</select></label>
-        <div class="h3ps-api-badges"><span class="${model?.capabilities?.images ? "is-ready" : ""}">${model?.capabilities?.images ? "Vision" : "Text only / unknown"}</span><span>${config.preset === "gemini" ? `Thinking ${escapeHtml(connection.reasoning_effort || "minimal")}` : "Reasoning provider managed"}</span><span>Provider managed</span></div>
-        <div class="h3ps-api-actions"><span>${policyLinks}</span><button type="button" data-api-model-refresh>${icon("refresh", 13)} Refresh models</button><button type="button" data-api-disconnect>Disconnect</button></div>
+        <label class="h3ps-api-model-select"><span data-i18n="settings.model">${t("settings.model")}</span><select data-api-model>${models.map((item) => `<option value="${escapeHtml(item.remote_model)}" ${item.remote_model === model?.remote_model ? "selected" : ""}>${escapeHtml(item.name)}${item.model_context_limit ? ` · ${Math.round(item.model_context_limit / 1024)}K` : ""}</option>`).join("")}</select></label>
+        <div class="h3ps-api-badges"><span class="${model?.capabilities?.images ? "is-ready" : ""}" data-i18n="${model?.capabilities?.images ? "providers.ollama.vision" : "providers.api.text_unknown"}">${model?.capabilities?.images ? t("providers.ollama.vision") : t("providers.api.text_unknown")}</span><span data-provider-dynamic="api-thinking">${config.preset === "gemini" ? t("providers.api.thinking", { level: escapeHtml(connection.reasoning_effort || "minimal") }) : t("toast.generation.reasoning_managed")}</span><span data-i18n="providers.api.provider_managed">${t("providers.api.provider_managed")}</span></div>
+        <div class="h3ps-api-actions"><span>${policyLinks}</span><button type="button" data-api-model-refresh>${icon("refresh", 13)} <span data-i18n="providers.api.refresh_models">${t("providers.api.refresh_models")}</span></button><button type="button" data-api-disconnect data-i18n="providers.external.disconnect">${t("providers.external.disconnect")}</button></div>
         ${disclosure}
-        <p class="h3ps-api-cancel-note">Stop aborts H3's connection. The remote provider may continue processing or billing.</p>
+        <p class="h3ps-api-cancel-note" data-i18n="providers.api.stop_note">${t("providers.api.stop_note")}</p>
       </div>
     </div>`;
   }
   return `${header}<div class="h3ps-api-layout">
     <div class="h3ps-api-preset-list">${providerChoices}</div>
     <form class="h3ps-api-setup" data-api-provider-form>
-      <div class="h3ps-api-intro"><strong>Connect ${selectedPreset.name}</strong><p>One shared Chat Completions backend. Provider-specific fields are applied by the selected preset.</p></div>
-      ${config.preset === "custom" ? `<label><span>API base URL</span><input name="base_url" type="url" value="${escapeHtml(config.base_url)}" placeholder="https://host.example/v1 or http://localhost:8000/v1" required><small>Public endpoints require HTTPS; loopback and private LAN addresses may use HTTP.</small></label>` : ""}
-      <label><span>API key ${config.preset === "custom" ? "<em>optional</em>" : ""}</span><input name="api_key" type="password" value="" placeholder="Paste key for this session" autocomplete="off" spellcheck="false" ${config.preset === "custom" ? "" : "required"}><small>The key is sent once to the local H3 backend, kept only in memory, and never saved in localStorage.</small></label>
-      <label><span>Model ID <em>optional before connect</em></span><input name="model_id" type="text" value="${escapeHtml(config.model_id)}" placeholder="Choose from provider list or enter an exact ID" spellcheck="false"></label>
-      ${config.preset === "gemini" ? `<label><span>Thinking level</span><select name="gemini_reasoning_effort"><option value="minimal" ${config.gemini_reasoning_effort === "minimal" ? "selected" : ""}>Minimal</option><option value="low" ${config.gemini_reasoning_effort === "low" ? "selected" : ""}>Low</option><option value="medium" ${config.gemini_reasoning_effort === "medium" ? "selected" : ""}>Medium</option><option value="high" ${config.gemini_reasoning_effort === "high" ? "selected" : ""}>High</option></select><small>Gemini manages the reasoning and output budget. Higher levels can use more tokens and take longer.</small></label>` : ""}
-      ${config.preset === "custom" ? `<div class="h3ps-api-custom-options"><label><input name="custom_images" type="checkbox" ${config.custom_images ? "checked" : ""}><span>Endpoint accepts image_url inputs</span></label><label><span>Known context <em>optional</em></span><input name="custom_context_tokens" type="number" min="4096" step="1024" value="${config.custom_context_tokens || ""}" placeholder="32768"></label></div>` : ""}
-      ${studio.apiProviderError ? `<div class="h3ps-api-error"><strong>${escapeHtml(studio.apiProviderError.code || "Connection failed")}</strong><span>${escapeHtml(studio.apiProviderError.message)}</span></div>` : ""}
+      <div class="h3ps-api-intro"><strong data-provider-dynamic="api-connect-title">${t("providers.api.connect_title", { provider: apiProviderName(selectedPreset) })}</strong><p data-i18n="providers.api.intro">${t("providers.api.intro")}</p></div>
+      ${config.preset === "custom" ? `<label><span data-i18n="providers.api.base_url">${t("providers.api.base_url")}</span><input name="base_url" type="url" value="${escapeHtml(config.base_url)}" placeholder="${escapeHtml(t("providers.api.base_placeholder"))}" data-i18n-placeholder="providers.api.base_placeholder" required><small data-i18n="providers.api.base_hint">${t("providers.api.base_hint")}</small></label>` : ""}
+      <label><span><span data-i18n="providers.api.key">${t("providers.api.key")}</span> ${config.preset === "custom" ? `<em data-i18n="providers.optional">${t("providers.optional")}</em>` : ""}</span><input name="api_key" type="password" value="" placeholder="${escapeHtml(t("providers.api.key_placeholder"))}" data-i18n-placeholder="providers.api.key_placeholder" autocomplete="off" spellcheck="false" ${config.preset === "custom" ? "" : "required"}><small data-i18n="providers.api.key_hint">${t("providers.api.key_hint")}</small></label>
+      <label><span><span data-i18n="providers.api.model_id">${t("providers.api.model_id")}</span> <em data-i18n="providers.api.optional_before_connect">${t("providers.api.optional_before_connect")}</em></span><input name="model_id" type="text" value="${escapeHtml(config.model_id)}" placeholder="${escapeHtml(t("providers.api.model_placeholder"))}" data-i18n-placeholder="providers.api.model_placeholder" spellcheck="false"></label>
+      ${config.preset === "gemini" ? `<label><span data-i18n="providers.api.thinking_level">${t("providers.api.thinking_level")}</span><select name="gemini_reasoning_effort"><option value="minimal" ${config.gemini_reasoning_effort === "minimal" ? "selected" : ""} data-i18n="providers.api.thinking_minimal">${t("providers.api.thinking_minimal")}</option><option value="low" ${config.gemini_reasoning_effort === "low" ? "selected" : ""} data-i18n="runtime.reasoning.low">${reasoningLabel("low")}</option><option value="medium" ${config.gemini_reasoning_effort === "medium" ? "selected" : ""} data-i18n="runtime.reasoning.medium">${reasoningLabel("medium")}</option><option value="high" ${config.gemini_reasoning_effort === "high" ? "selected" : ""} data-i18n="runtime.reasoning.high">${reasoningLabel("high")}</option></select><small data-i18n="providers.api.thinking_hint">${t("providers.api.thinking_hint")}</small></label>` : ""}
+      ${config.preset === "custom" ? `<div class="h3ps-api-custom-options"><label><input name="custom_images" type="checkbox" ${config.custom_images ? "checked" : ""}><span data-i18n="providers.api.images_option">${t("providers.api.images_option")}</span></label><label><span><span data-i18n="providers.api.known_context">${t("providers.api.known_context")}</span> <em data-i18n="providers.optional">${t("providers.optional")}</em></span><input name="custom_context_tokens" type="number" min="4096" step="1024" value="${config.custom_context_tokens || ""}" placeholder="32768"></label></div>` : ""}
+      ${studio.apiProviderError ? `<div class="h3ps-api-error"><strong ${studio.apiProviderError.code ? "" : 'data-provider-dynamic="api-error-code"'}>${escapeHtml(studio.apiProviderError.code || t("providers.api.connection_failed"))}</strong><span>${escapeHtml(studio.apiProviderError.message)}</span></div>` : ""}
       ${disclosure}
-      <div class="h3ps-api-actions"><span>${selectedPreset.keyUrl ? `<a href="${selectedPreset.keyUrl}" target="_blank" rel="noopener noreferrer">Create or manage key ↗</a>` : ""}${policyLinks}</span><button class="h3ps-api-primary" type="submit">Connect &amp; test</button></div>
+      <div class="h3ps-api-actions"><span>${selectedPreset.keyUrl ? `<a href="${selectedPreset.keyUrl}" target="_blank" rel="noopener noreferrer" data-i18n="providers.api.manage_key">${t("providers.api.manage_key")}</a>` : ""}${policyLinks}</span><button class="h3ps-api-primary" type="submit" data-i18n="providers.api.connect_test">${t("providers.api.connect_test")}</button></div>
     </form>
   </div>`;
+}
+
+function syncProviderPanelCopy(root = studio.root) {
+  if (!root) return;
+  root.querySelectorAll("[data-provider-dynamic]").forEach((element) => {
+    const kind = element.dataset.providerDynamic;
+    if (kind === "external-state") {
+      const connected = studio.externalModel;
+      const contextSuffix = connected?.context_verified !== false && Number.isFinite(connected?.server_context_tokens)
+        ? ` · ${t("providers.external.context", { tokens: Math.round(connected.server_context_tokens / 1024) })}`
+        : "";
+      element.textContent = connected
+        ? `${connected.endpoint}${contextSuffix}`
+        : studio.externalServerError
+          ? t("providers.external.offline_saved")
+          : t("providers.external.connect_hint");
+    } else if (kind === "ollama-host-summary") {
+      element.textContent = studio.ollamaHost !== DEFAULT_OLLAMA_HOST
+        ? t("providers.ollama.remote_host", { host: studio.ollamaHost })
+        : t("providers.ollama.use_remote");
+    } else if (kind === "ollama-copy-command") {
+      const command = element.dataset.command || "";
+      const label = t("providers.ollama.copy_command_title", { command });
+      element.title = label;
+      element.setAttribute("aria-label", label);
+    } else if (kind === "ollama-version") {
+      if (!studio.ollamaStatus) return;
+      element.textContent = t("providers.ollama.version", {
+        version: studio.ollamaStatus.version || t("models.unknown"),
+        host: studio.ollamaHost !== DEFAULT_OLLAMA_HOST ? studio.ollamaHost : t("providers.ollama.local_service_lower"),
+      });
+    } else if (kind === "ollama-remote-not-responding") {
+      element.textContent = t("providers.ollama.remote_not_responding", { host: studio.ollamaHost });
+    } else if (kind === "ollama-error-message") {
+      if (!studio.ollamaStatus?.error?.message) element.textContent = t("providers.ollama.unexpected");
+    } else if (kind === "api-connect-title") {
+      const preset = API_PROVIDER_UI[studio.apiProviderConfig?.preset] || API_PROVIDER_UI.gemini;
+      element.textContent = t("providers.api.connect_title", { provider: apiProviderName(preset) });
+    } else if (kind === "api-connected-meta") {
+      const connection = studio.apiProviderConnection;
+      if (!connection) return;
+      element.textContent = `${connection.base_url} · ${connection.key_hint || t("providers.api.no_key")}${connection.compatibility_profile === "lm_studio" ? ` · ${t("providers.api.lm_studio")}` : ""}`;
+    } else if (kind === "api-thinking") {
+      if (!studio.apiProviderConnection) return;
+      element.textContent = studio.apiProviderConfig?.preset === "gemini"
+        ? t("providers.api.thinking", { level: studio.apiProviderConnection.reasoning_effort || "minimal" })
+        : t("toast.generation.reasoning_managed");
+    } else if (kind === "api-error-code") {
+      if (!studio.apiProviderError?.code) element.textContent = t("providers.api.connection_failed");
+    }
+  });
 }
 
 function setOtherModelsPopover(open) {
@@ -2563,7 +2624,7 @@ async function connectExternalServer(form) {
     ...(form.elements.api_key.value.trim() ? {api_key:form.elements.api_key.value.trim()} : {}),
   };
   submit.disabled = true;
-  submit.textContent = "Connecting…";
+  submit.textContent = t("providers.external.connecting");
   try {
     const result = await probeExternalServer(config);
     if (studio.externalConnectionAttempt !== attempt || (studio.modelSelectionRevision || 0) !== selectionRevision) return;
@@ -2574,18 +2635,18 @@ async function connectExternalServer(form) {
     saveExternalServerConfig(localStorage, saved);
     studio.models = [...studio.models.filter((model) => model.family !== "external"), result.model];
     selectModel(result.model);
-    const context = result.model.context_verified !== false
-      ? ` · ${Math.round(result.model.server_context_tokens / 1024)}K context` : "";
-    showToast("llama.cpp connected", `${result.model.name}${context}`);
+    const contextSuffix = result.model.context_verified !== false
+      ? ` · ${t("providers.external.context", { tokens: Math.round(result.model.server_context_tokens / 1024) })}` : "";
+    showToast(msg("toast.external.connected.title"), `${result.model.name}${contextSuffix}`);
   } catch (error) {
     if (studio.externalConnectionAttempt !== attempt || (studio.modelSelectionRevision || 0) !== selectionRevision) return;
     studio.externalServerError = error;
-    showToast(error.code || "Connection failed", error.message, error.details);
+    showErrorToast("toast.external.failed.title", error);
     renderInferenceSettings();
   } finally {
     if (studio.externalConnectionAttempt === attempt) {
       submit.disabled = false;
-      submit.textContent = "Connect";
+      submit.textContent = t("providers.external.connect");
     }
   }
 }
@@ -2603,7 +2664,7 @@ function disconnectExternalServer() {
   renderInferenceSettings();
   syncRuntimeSummary();
   saveUserPreferences(localStorage, studio);
-  showToast("External server disconnected", "The llama.cpp process was left running and unchanged.");
+  showToast(msg("toast.external.disconnected.title"), msg("toast.external.disconnected.message"));
 }
 
 async function connectConfiguredApiProvider(form) {
@@ -2622,7 +2683,7 @@ async function connectConfiguredApiProvider(form) {
     custom_context_tokens: Number.isInteger(contextValue) && contextValue >= 4096 ? contextValue : null,
   };
   submit.disabled = true;
-  submit.textContent = "Connecting…";
+  submit.textContent = t("providers.external.connecting");
   try {
     const result = await probeApiProvider({
       preset: config.preset,
@@ -2662,19 +2723,25 @@ async function connectConfiguredApiProvider(form) {
       syncRuntimeSummary();
       saveUserPreferences(localStorage, studio);
     }
+    const status = model
+      ? t(model.capabilities?.images ? "toast.api.connected.vision" : "toast.api.connected.text")
+      : "";
+    const unverified = result.connection.connection_verified ? "" : t("toast.api.connected.unverified");
     showToast(
-      `${result.connection.provider_name} connected`,
-      model ? `${model.name} · ${model.capabilities?.images ? "vision ready" : "text only or vision unknown"}${result.connection.connection_verified ? "" : " · endpoint unverified"}` : "Connected. Enter an exact model ID or refresh the model list.",
+      msg("toast.api.connected.title", { provider: result.connection.provider_name }),
+      model
+        ? t("toast.api.connected.message", { model: model.name, status, unverified })
+        : t("toast.api.connected.no_model"),
     );
   } catch (error) {
     if (studio.apiConnectionAttempt !== attempt || (studio.modelSelectionRevision || 0) !== selectionRevision) return;
     studio.apiProviderError = error;
-    showToast(error.code || "API connection failed", error.message, error.details);
+    showErrorToast("toast.api.failed.title", error);
     renderInferenceSettings();
   } finally {
     if (studio.apiConnectionAttempt === attempt) {
       submit.disabled = false;
-      submit.textContent = "Connect & test";
+      submit.textContent = t("providers.api.connect_test");
     }
   }
 }
@@ -2692,7 +2759,7 @@ async function disconnectConfiguredApiProvider({ announce = true } = {}) {
   renderInferenceSettings();
   syncRuntimeSummary();
   saveUserPreferences(localStorage, studio);
-  if (announce) showToast("API provider disconnected", "The session credential was removed from backend memory.");
+  if (announce) showToast(msg("toast.api.disconnected.title"), msg("toast.api.disconnected.message"));
   if (connection?.id) {
     try {
       await disconnectApiProvider(connection.id);
@@ -2733,11 +2800,15 @@ async function refreshApiProviderModels() {
     const model = studio.apiProviderModels.find((item) => item.remote_model === selectedRemote) || apiProviderModelForSettings();
     if (model) selectModel(model);
     else renderInferenceSettings();
-    showToast("API models refreshed", `${studio.apiProviderModels.length} model${studio.apiProviderModels.length === 1 ? "" : "s"} reported.`);
+    const count = studio.apiProviderModels.length;
+    showToast(
+      msg("toast.api.models_refreshed.title"),
+      msg(count === 1 ? "toast.api.models_refreshed.one" : "toast.api.models_refreshed.other", { count }),
+    );
   } catch (error) {
     if (studio.apiConnectionAttempt !== attempt || (studio.modelSelectionRevision || 0) !== selectionRevision) return;
     studio.apiProviderError = error;
-    showToast(error.code || "Model refresh failed", error.message, error.details);
+    showErrorToast("toast.api.refresh_failed.title", error);
   }
 }
 
@@ -2804,7 +2875,7 @@ async function refreshModels() {
   } catch (error) {
     if (studio.modelDiscoveryAttempt !== attempt || (studio.modelSelectionRevision || 0) !== selectionRevision) return;
     studio.preferencesRestoring = false;
-    showToast(error.code || "Model scan failed", error.message, error.details);
+    showErrorToast("toast.models.scan_failed.title", error);
   } finally {
     // A newer selection can invalidate the result, but must not leave startup
     // restoration active. A newer discovery owns its own completion instead.
@@ -2818,7 +2889,7 @@ async function configureOllamaHost(form) {
   const submit = form.querySelector('[type="submit"]');
   const requestedHost = normalizeOllamaHost(form.elements.host.value);
   submit.disabled = true;
-  submit.textContent = "Checking…";
+  submit.textContent = t("providers.ollama.checking");
   try {
     const status = await getOllamaStatus(requestedHost);
     const endpoint = normalizeOllamaHost(status.endpoint || requestedHost);
@@ -2848,15 +2919,17 @@ async function configureOllamaHost(form) {
     }
     syncOllamaAutoDetection();
     showToast(
-      changed ? "Ollama host updated" : "Ollama host checked",
-      endpoint === DEFAULT_OLLAMA_HOST ? "Using Ollama on this computer." : `Using ${endpoint}.`,
+      msg(changed ? "toast.ollama.host_updated" : "toast.ollama.host_checked"),
+      endpoint === DEFAULT_OLLAMA_HOST
+        ? msg("toast.ollama.host_local")
+        : msg("toast.ollama.host_using", { endpoint }),
     );
   } catch (error) {
-    showToast(error.code || "Invalid Ollama host", error.message, error.details);
+    showErrorToast("toast.ollama.invalid_host", error);
     renderInferenceSettings();
   } finally {
     submit.disabled = false;
-    submit.textContent = "Apply";
+    submit.textContent = t("providers.ollama.apply");
   }
 }
 
@@ -2869,7 +2942,7 @@ async function refreshOllama({ automatic = false } = {}) {
   const refreshButton = control?.querySelector("[data-ollama-refresh]");
   if (refreshButton && !automatic) {
     refreshButton.disabled = true;
-    refreshButton.textContent = "Checking…";
+    refreshButton.textContent = t("providers.ollama.checking");
   }
   try {
     const requestedHost = studio.ollamaHost;
@@ -2883,19 +2956,19 @@ async function refreshOllama({ automatic = false } = {}) {
     else renderInferenceSettings();
     if (!automatic && status.state !== "ready") {
       showToast(
-        status.state === "not_installed" ? "Ollama is not installed" : "Ollama is not running",
+        msg(status.state === "not_installed" ? "toast.ollama.not_installed" : "toast.ollama.not_running"),
         studio.ollamaHost !== DEFAULT_OLLAMA_HOST
-          ? `The Ollama service at ${studio.ollamaHost} is not responding.`
+          ? t("providers.ollama.remote_not_responding", { host: studio.ollamaHost })
           : status.state === "not_installed"
-          ? "Install the official Ollama app, then return here."
-          : "Open the Ollama app, wait for its local service to start, then select Check now again.",
+          ? t("toast.ollama.install_hint")
+          : t("toast.ollama.start_hint"),
       );
     }
   } catch (error) {
     studio.ollamaStatus = { state: "error", running: false, compatible_models: [], error: { code: error.code, message: error.message } };
     studio.ollamaError = error;
     renderInferenceSettings();
-    if (!automatic) showToast("Ollama check failed", error.message, error.details);
+    if (!automatic) showErrorToast("toast.ollama.failed.title", error);
   } finally {
     studio.ollamaRefreshBusy = false;
     syncOllamaAutoDetection();
@@ -4003,6 +4076,7 @@ function createStudio() {
       syncActiveModelSummary();
       syncLifecycleActions();
       syncProviderSettings();
+      syncProviderPanelCopy();
       syncRuntimeSummary();
       syncThinkingAvailability();
       syncContextAvailability();
