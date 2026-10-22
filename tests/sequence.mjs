@@ -7,6 +7,7 @@ import { DEFAULT_SEQUENCE_INSTRUCTIONS, LEGACY_SEQUENCE_INSTRUCTIONS, newSequenc
 import { createSequenceController } from "../web/sequence_controller.js";
 import { createSequenceWorkspace, displaySeparator, parseSeparator } from "../web/sequence_workspace.js";
 import { writeToastContent } from "../web/toast.js";
+import { t } from "../web/i18n.js";
 
 const deferred = () => { let resolve; const promise=new Promise(r=>resolve=r); return {promise,resolve}; };
 const main=await readFile(new URL("../web/main.js",import.meta.url),"utf8");
@@ -88,7 +89,7 @@ test("real DOM Add/Delete, shell sync and repeated workspace switches preserve D
   const root=document.createElement("div");document.body.append(root);
   root.innerHTML=`<div data-workspace="video"></div><div data-video-modes></div><div data-music-inputs></div><span data-output-label></span><span data-output-mobile-label></span><textarea data-output>Single prompt</textarea><span data-copy-label></span><span data-refine-media-note></span><span data-refine-title></span><span data-refine-helper></span><textarea data-refine-instruction></textarea><div class="h3ps-workspace"><div data-video-inputs><div class="h3ps-section-actions"></div><div data-h3ps-media><div tabindex="0" data-asset-id="a"></div><div tabindex="0" data-asset-id="b"></div></div></div></div><button data-generate><span data-generate-label>Generate prompt</span></button>`;
   const studio={root,mode:"T2VA"};
-  const context=vm.createContext({studio,rememberReferenceInsertTarget(){},toggleLyricsRefine(){},setMusicSystemPromptExpanded(){},syncModeAvailability(){},t:key=>key,msg:(key,params)=>({key,params})});
+  const context=vm.createContext({studio,t,rememberReferenceInsertTarget(){},toggleLyricsRefine(){},setMusicSystemPromptExpanded(){},syncModeAvailability(){},msg:(key,params)=>({key,params})});
   vm.runInContext(main.match(/^function syncWorkspace\([^]*?^}/m)[0],context);
   const errors=[]; let busy=false, copied="";
   const assets=[{id:"a",filename:"portrait.png",type:"image",reference:"<Picture 7>"},{id:"b",filename:"room.png",type:"image",reference:"<Picture 8>"}];

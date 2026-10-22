@@ -66,35 +66,11 @@ const TROUBLESHOOTING_GUIDE_URL = "https://github.com/duckyshell/ComfyUI-MiniMax
 const MUSIC3_GUIDE_URL = "https://github.com/MiniMax-AI/MiniMax-Music3/tree/main/skills/music-caption-rewriter";
 
 const MODES = {
-  T2VA: {
-    title: "Text to video",
-    hint: "Describe the scene. No reference media is required.",
-    assets: [],
-  },
-  I2VA: {
-    title: "Image to video",
-    hint: "The opening image anchors subject, framing and visual style.",
-    assets: [],
-    limit: 1,
-  },
-  FL2VA: {
-    title: "First & last frame",
-    hint: "Define the visual transition between the opening and closing frames.",
-    assets: [],
-    limit: 2,
-  },
-  L2VA: {
-    title: "Last frame",
-    hint: "The final image defines where the generated shot must arrive.",
-    assets: [],
-    limit: 1,
-  },
-  Reference: {
-    title: "Images, video & audio",
-    tabTitle: "",
-    hint: "Add up to 9 images, 3 videos and 3 audio files.",
-    assets: [],
-  },
+  T2VA: { titleKey: "mode.T2VA.title", hintKey: "mode.T2VA.hint", assets: [] },
+  I2VA: { titleKey: "mode.I2VA.title", hintKey: "mode.I2VA.hint", assets: [], limit: 1 },
+  FL2VA: { titleKey: "mode.FL2VA.title", hintKey: "mode.FL2VA.hint", assets: [], limit: 2 },
+  L2VA: { titleKey: "mode.L2VA.title", hintKey: "mode.L2VA.hint", assets: [], limit: 1 },
+  Reference: { titleKey: "mode.Reference.title", tabTitle: "", hintKey: "mode.Reference.hint", assets: [] },
 };
 
 const MODE_DEFAULT_DRAFTS = {
@@ -227,21 +203,35 @@ function promptLengthMeta(value) {
 }
 
 function formatGenerationMeta(result) {
-  const peakVram = result.peak_vram_mb ? ` · ${(result.peak_vram_mb / 1024).toFixed(1)} GB peak` : "";
+  const peakVram = result.peak_vram_mb
+    ? ` · ${t("meta.peak_vram", { gb: (result.peak_vram_mb / 1024).toFixed(1) })}`
+    : "";
   const load = Number(result.model_load_seconds || 0).toFixed(1);
   const media = Number(result.media_processing_seconds || 0).toFixed(1);
   const llm = Number(result.generation_seconds || 0).toFixed(1);
-  const fallback = result.thinking_fallback ? " · Thinking fallback" : "";
-  const memory = result.context_tokens ? ` · ${Math.round(result.context_tokens / 1024)}K/${String(result.kv_cache).toUpperCase()}` : "";
+  const fallback = result.thinking_fallback ? ` · ${t("meta.thinking_fallback")}` : "";
+  const memory = result.context_tokens
+    ? ` · ${Math.round(result.context_tokens / 1024)}K/${String(result.kv_cache).toUpperCase()}`
+    : "";
+  const total = result.total_seconds.toFixed(1);
   const timing = result.api_provider
-    ? `${result.total_seconds.toFixed(1)}s total (${media}s media · ${llm}s provider)`
+    ? t("meta.timing.api", { total, media, llm })
     : result.external_server
-    ? `${result.total_seconds.toFixed(1)}s total (${media}s media · ${llm}s server)`
-    : `${result.total_seconds.toFixed(1)}s total (${load}s load · ${media}s media · ${llm}s LLM)`;
-  const speed = Number.isFinite(result.tokens_per_second) ? ` · ${result.tokens_per_second.toFixed(1)} tok/s` : "";
-  const apiRequests = result.api_provider ? ` · ${result.provider_request_count || 1} API request${result.provider_request_count === 1 ? "" : "s"}` : "";
-  const cost = Number.isFinite(result.provider_cost_usd) ? ` · $${result.provider_cost_usd.toFixed(4)} reported` : "";
-  const usage = result.api_provider && result.usage_source ? ` · usage ${result.usage_source}` : "";
+    ? t("meta.timing.server", { total, media, llm })
+    : t("meta.timing.local", { total, load, media, llm });
+  const speed = Number.isFinite(result.tokens_per_second)
+    ? ` · ${t("meta.tokens_per_second", { value: result.tokens_per_second.toFixed(1) })}`
+    : "";
+  const requests = result.provider_request_count || 1;
+  const apiRequests = result.api_provider
+    ? ` · ${t(requests === 1 ? "meta.api_request.one" : "meta.api_request.other", { count: requests })}`
+    : "";
+  const cost = Number.isFinite(result.provider_cost_usd)
+    ? ` · ${t("meta.cost", { value: result.provider_cost_usd.toFixed(4) })}`
+    : "";
+  const usage = result.api_provider && result.usage_source
+    ? ` · ${t("meta.usage", { source: result.usage_source })}`
+    : "";
   return `${promptLengthMeta(result.prompt)} · ${timing}${speed}${apiRequests}${cost}${usage}${peakVram}${memory}${fallback}`;
 }
 
@@ -269,8 +259,8 @@ function syncMusicSystemPromptSummary() {
   if (!summary) return;
   summary.textContent = Object.hasOwn(studio.customSystemPrompts, "music3")
     || Object.hasOwn(studio.customSystemPrompts, "music3_lyrics")
-    ? "Custom"
-    : "Default";
+    ? t("settings.custom")
+    : t("system_prompt.status");
 }
 
 async function syncSystemPromptEditor(profile) {
@@ -290,8 +280,8 @@ async function syncSystemPromptEditor(profile) {
       studio.systemPromptDefaults[result.profile] = result.system_prompt;
     } catch (error) {
       textarea.value = "";
-      if (status) status.textContent = "Unavailable";
-      if (summaryStatus) summaryStatus.textContent = "Unavailable";
+      if (status) status.textContent = t("system_prompt.unavailable");
+      if (summaryStatus) summaryStatus.textContent = t("system_prompt.unavailable");
       showToast(error.code || "System Prompt unavailable", error.message, error.details);
       return;
     }
@@ -302,8 +292,8 @@ async function syncSystemPromptEditor(profile) {
     textarea.disabled = false;
     resizeSystemPromptEditor(textarea);
   }
-  if (status) status.textContent = custom ? "Custom" : "Default";
-  if (summaryStatus) summaryStatus.textContent = custom ? "Custom" : "Default";
+  if (status) status.textContent = custom ? t("settings.custom") : t("system_prompt.status");
+  if (summaryStatus) summaryStatus.textContent = custom ? t("settings.custom") : t("system_prompt.status");
   reset.hidden = !custom;
   const text = custom ? studio.customSystemPrompts[profile] : studio.systemPromptDefaults[profile] || "";
   count.textContent = `${text.length.toLocaleString()} / 8,000`;
@@ -423,6 +413,7 @@ function renderAsset(asset, index) {
   const destructiveDisabled = studio.requestBusy ? "disabled" : "";
   const tagDisabled = studio.requestBusy ? "disabled" : "";
   const draggable = studio.requestBusy ? "false" : "true";
+  const assetName = escapeHtml(asset.reference || asset.filename);
   const visual = asset.type === "audio"
     ? `<div class="h3ps-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>`
     : asset.preview_url
@@ -431,15 +422,15 @@ function renderAsset(asset, index) {
   const overlay = asset.type === "video" ? `<span class="h3ps-play">${icon("play", 18)}</span>` : "";
   const duration = formatDuration(asset.duration);
   return `
-    <div class="h3ps-asset" tabindex="0" role="group" aria-label="Media inspector" draggable="${draggable}" data-asset-index="${index}" data-asset-id="${asset.id}" data-replace-label="Replace ${escapeHtml(asset.reference || asset.filename)}">
+    <div class="h3ps-asset" tabindex="0" role="group" aria-label="${t("media.inspector")}" draggable="${draggable}" data-asset-index="${index}" data-asset-id="${asset.id}" data-replace-label="${t("media.replace", { name: assetName })}">
       <span class="h3ps-asset-preview h3ps-${asset.type}">${visual}${overlay}</span>
       <span class="h3ps-asset-copy">
-        <strong>${asset.reference ? `<button type="button" class="h3ps-media-tag is-${asset.type}" data-media-tag="${escapeHtml(asset.reference)}" ${tagDisabled} title="Insert reference at text cursor">${escapeHtml(asset.reference || asset.filename)}</button>` : "Trim required"}</strong>
+        <strong>${asset.reference ? `<button type="button" class="h3ps-media-tag is-${asset.type}" data-media-tag="${escapeHtml(asset.reference)}" ${tagDisabled} title="${t("media.insert_reference")}" data-i18n-title="media.insert_reference">${escapeHtml(asset.reference || asset.filename)}</button>` : t("media.trim_required")}</strong>
         <small>${escapeHtml(asset.filename)}</small>
       </span>
       ${duration ? `<span class="h3ps-duration">${duration}</span>` : ""}
-      <button class="h3ps-replace-asset" type="button" data-replace-asset="${asset.id}" title="Replace ${escapeHtml(asset.reference || asset.filename)}" aria-label="Replace ${escapeHtml(asset.reference || asset.filename)}" ${destructiveDisabled}>${icon("refresh", 12)}</button>
-      <button class="h3ps-remove-asset" type="button" data-remove-asset="${asset.id}" title="Remove ${escapeHtml(asset.reference || asset.filename)}" aria-label="Remove ${escapeHtml(asset.reference || asset.filename)}" ${destructiveDisabled}>${icon("close", 12)}</button>
+      <button class="h3ps-replace-asset" type="button" data-replace-asset="${asset.id}" title="${t("media.replace", { name: assetName })}" aria-label="${t("media.replace", { name: assetName })}" ${destructiveDisabled}>${icon("refresh", 12)}</button>
+      <button class="h3ps-remove-asset" type="button" data-remove-asset="${asset.id}" title="${t("media.remove", { name: assetName })}" aria-label="${t("media.remove", { name: assetName })}" ${destructiveDisabled}>${icon("close", 12)}</button>
     </div>`;
 }
 
@@ -460,16 +451,16 @@ function syncComposerControl(mode = studio.mode) {
   const panel = studio.root.querySelector("[data-media-panel-action]");
   if (panel) {
     panel.disabled = !studio.assets.some(asset => ["image", "video", "audio"].includes(asset.type) && asset.content_url);
-    panel.title = panel.disabled ? "Add media first" : "Open Media panel";
+    panel.title = panel.disabled ? t("media.add_first") : t("media.open_panel");
   }
   const button = studio.root.querySelector("[data-open-composer]");
   if (!button) return;
   const sources = mode === "Reference" ? referenceComposerAssets() : [];
   button.disabled = studio.requestBusy || !sources.length;
-  button.title = mode !== "Reference" ? "Switch to Reference mode"
-    : studio.requestBusy ? "Wait for the current request to finish"
-    : sources.length ? `Compose a new Picture from ${sources.length} media source${sources.length === 1 ? "" : "s"}`
-    : "Add a Picture or Video first";
+  button.title = mode !== "Reference" ? t("media.switch_reference")
+    : studio.requestBusy ? t("media.wait_request")
+    : sources.length ? t(sources.length === 1 ? "media.compose_sources.one" : "media.compose_sources.other", { count: sources.length })
+    : t("media.add_picture_or_video");
 }
 
 async function addComposedPicture({ blob, width, height, mimeType, filename, sources }) {
@@ -518,8 +509,8 @@ function renderMedia(mode) {
   const data = MODES[mode];
   const assets = studio.assets.filter((asset) => asset.mode === mode);
   const media = studio.root.querySelector("[data-h3ps-media]");
-  studio.root.querySelector("[data-h3ps-mode-title]").textContent = data.title;
-  studio.root.querySelector("[data-h3ps-mode-hint]").textContent = data.hint;
+  studio.root.querySelector("[data-h3ps-mode-title]").textContent = t(data.titleKey);
+  studio.root.querySelector("[data-h3ps-mode-hint]").textContent = t(data.hintKey);
   studio.root.querySelectorAll("[data-mode]").forEach((button) => {
     const active = button.dataset.mode === mode;
     button.classList.toggle("is-active", active);
@@ -530,8 +521,8 @@ function renderMedia(mode) {
     media.innerHTML = `
       <div class="h3ps-empty-drop is-static">
         <span class="h3ps-empty-icon">${icon("spark", 20)}</span>
-        <strong>Start from a text description</strong>
-        <small>T2VA does not use reference media</small>
+        <strong data-i18n="media.empty_t2va_title">Start from a text description</strong>
+        <small data-i18n="media.empty_t2va_hint">T2VA does not use reference media</small>
       </div>`;
   } else {
     const isReference = mode === "Reference";
@@ -539,18 +530,20 @@ function renderMedia(mode) {
     const visibleAssets = filter === "all" ? assets : assets.filter((asset) => asset.type === filter);
     const counts = assets.reduce((result, asset) => ({ ...result, [asset.type]: (result[asset.type] || 0) + 1 }), {});
     const filters = isReference ? `
-      <div class="h3ps-media-filters" aria-label="Reference type">
-        <button type="button" data-media-filter="all" class="${filter === "all" ? "is-active" : ""}">All <b>${assets.length}/12</b></button>
-        <button type="button" data-media-filter="image" class="${filter === "image" ? "is-active" : ""}">${icon("image", 13)} Images <b>${counts.image || 0}/9</b></button>
-        <button type="button" data-media-filter="video" class="${filter === "video" ? "is-active" : ""}">${icon("video", 13)} Video <b>${counts.video || 0}/3</b></button>
-        <button type="button" data-media-filter="audio" class="${filter === "audio" ? "is-active" : ""}">${icon("audio", 13)} Audio <b>${counts.audio || 0}/3</b></button>
+      <div class="h3ps-media-filters" aria-label="${t("media.reference_type")}" data-i18n-aria-label="media.reference_type">
+        <button type="button" data-media-filter="all" class="${filter === "all" ? "is-active" : ""}"><span data-i18n="media.filter_all">All</span> <b>${assets.length}/12</b></button>
+        <button type="button" data-media-filter="image" class="${filter === "image" ? "is-active" : ""}">${icon("image", 13)} <span data-i18n="media.filter_images">Images</span> <b>${counts.image || 0}/9</b></button>
+        <button type="button" data-media-filter="video" class="${filter === "video" ? "is-active" : ""}">${icon("video", 13)} <span data-i18n="media.filter_video">Video</span> <b>${counts.video || 0}/3</b></button>
+        <button type="button" data-media-filter="audio" class="${filter === "audio" ? "is-active" : ""}">${icon("audio", 13)} <span data-i18n="media.filter_audio">Audio</span> <b>${counts.audio || 0}/3</b></button>
       </div>` : "";
-    const addLabel = !isReference || filter === "image" ? "Add image" : filter === "video" ? "Add video" : filter === "audio" ? "Add audio" : "Add media";
+    const addLabelKey = !isReference || filter === "image"
+      ? "media.add_image"
+      : filter === "video" ? "media.add_video" : filter === "audio" ? "media.add_audio" : "media.add_media";
     const canAdd = isReference || assets.length < data.limit;
     media.innerHTML = `
       ${filters}
       <div class="h3ps-assets ${isReference ? "is-reference" : ""}">${visibleAssets.map((asset) => renderAsset(asset, assets.indexOf(asset))).join("")}
-        ${canAdd ? `<button class="${assets.length ? "h3ps-add-asset" : "h3ps-empty-drop"}" type="button" data-add-media ${studio.requestBusy ? "disabled" : ""}>${icon("plus", 18)}<span>${addLabel}</span><small>Drop files here</small></button>` : ""}
+        ${canAdd ? `<button class="${assets.length ? "h3ps-add-asset" : "h3ps-empty-drop"}" type="button" data-add-media ${studio.requestBusy ? "disabled" : ""}>${icon("plus", 18)}<span data-i18n="${addLabelKey}">${t(addLabelKey)}</span><small data-i18n="media.drop_files">Drop files here</small></button>` : ""}
       </div>`;
   }
   notifyMediaCompatibility();
@@ -1018,7 +1011,9 @@ function updateBriefLayout() {
   const largeCanvas = window.innerWidth >= 3000 && window.innerHeight >= 1600;
   const minimumHeight = compactHeight ? 80 : largeCanvas ? 125 : 105;
   const counter = brief.closest(".h3ps-brief").querySelector(".h3ps-char-count");
-  counter.textContent = `${brief.value.length.toLocaleString()}${studio.mode === "Music3" ? " / 2,000" : " characters"}`;
+  counter.textContent = studio.mode === "Music3"
+    ? t("workspace.character_count_limit", { count: brief.value.length.toLocaleString(), limit: "2,000" })
+    : t("workspace.character_count", { count: brief.value.length.toLocaleString() });
   fitTextarea(brief, minimumHeight, 2);
   brief.style.overflowY = "hidden";
 }
@@ -1026,7 +1021,8 @@ function updateBriefLayout() {
 function updateMusicLyricsCount() {
   if (!studio) return;
   const lyrics = studio.root.querySelector("[data-music-lyrics]");
-  lyrics.closest(".h3ps-brief").querySelector(".h3ps-char-count").textContent = `${lyrics.value.length.toLocaleString()} / 4,000`;
+  lyrics.closest(".h3ps-brief").querySelector(".h3ps-char-count").textContent =
+    t("workspace.character_count_limit", { count: lyrics.value.length.toLocaleString(), limit: "4,000" });
 }
 
 function restoreModeDraft(mode) {
@@ -1061,18 +1057,18 @@ function syncWorkspace() {
   studio.root.querySelector("[data-video-modes]").hidden = music;
   studio.root.querySelector("[data-video-inputs]").hidden = music;
   studio.root.querySelector("[data-music-inputs]").hidden = !music;
-  const outputLabel = music ? "Generated caption" : "Generated prompt";
+  const outputLabel = music ? t("workspace.generated_caption") : t("workspace.generated_prompt");
   studio.root.querySelector("[data-output-label]").textContent = outputLabel;
   studio.root.querySelector("[data-output-mobile-label]").textContent = outputLabel;
   studio.root.querySelector("[data-output]").setAttribute("aria-label", outputLabel);
-  studio.root.querySelector("[data-copy-label]").textContent = music ? "Copy caption" : "Copy prompt";
-  studio.root.querySelector("[data-generate-label]").textContent = music ? "Generate caption" : "Generate prompt";
-  studio.root.querySelector("[data-refine-media-note]").textContent = music ? "Lyrics stay separate" : "No media re-upload";
-  studio.root.querySelector("[data-refine-title]").textContent = music ? "Refine caption" : "Refine prompt";
-  studio.root.querySelector("[data-refine-helper]").textContent = music ? "Describe the musical change" : "Describe only what should change";
+  studio.root.querySelector("[data-copy-label]").textContent = music ? t("workspace.copy_caption") : t("workspace.copy_prompt");
+  studio.root.querySelector("[data-generate-label]").textContent = music ? t("generation.generate_caption") : t("generation.generate_prompt");
+  studio.root.querySelector("[data-refine-media-note]").textContent = music ? t("workspace.lyrics_stay_separate") : t("workspace.no_media_reupload");
+  studio.root.querySelector("[data-refine-title]").textContent = music ? t("workspace.refine_caption") : t("workspace.refine_prompt");
+  studio.root.querySelector("[data-refine-helper]").textContent = music ? t("workspace.describe_musical_change") : t("workspace.describe_change");
   studio.root.querySelector("[data-refine-instruction]").placeholder = music
-    ? "For example: keep the verses sparse and let the final chorus open wider."
-    : "For example: make the camera movement slower and keep the ending more ambiguous.";
+    ? t("workspace.lyrics_refine_placeholder_example")
+    : t("workspace.refine_placeholder");
   if (studio.mode !== "Music3") rememberReferenceInsertTarget(studio.root.querySelector("[data-output]"));
   else referenceInsertTarget = null;
 
@@ -3024,17 +3020,17 @@ async function submitRefinement() {
   }
 }
 
-function musicSystemPromptPanelMarkup(profile, label, description, hidden = false) {
+function musicSystemPromptPanelMarkup(profile, labelKey, descriptionKey, hidden = false) {
   return `
     <div class="h3ps-system-prompt-panel" data-music-system-prompt-panel="${profile}" ${hidden ? "hidden" : ""}>
       <header class="h3ps-system-prompt-editor-heading">
-        <button type="button" data-music-system-prompt-back>${icon("chevron", 12)} Back</button>
-        <span><small>System prompt</small><strong>${label}</strong></span>
-        <span class="h3ps-system-prompt-panel-status"><em data-system-prompt-status="${profile}">Default</em>${icon("check", 13)}</span>
+        <button type="button" data-music-system-prompt-back>${icon("chevron", 12)} <span data-i18n="system_prompt.back">Back</span></button>
+        <span><small data-i18n="system_prompt.title">System Prompt</small><strong data-i18n="${labelKey}">${t(labelKey)}</strong></span>
+        <span class="h3ps-system-prompt-panel-status"><em data-system-prompt-status="${profile}" data-i18n="system_prompt.status">Default</em>${icon("check", 13)}</span>
       </header>
-      <p>${description}</p>
+      <p data-i18n="${descriptionKey}">${t(descriptionKey)}</p>
       <textarea data-system-prompt="${profile}" maxlength="8000" spellcheck="true" disabled></textarea>
-      <footer><small data-system-prompt-count="${profile}">0 / 8,000</small><button type="button" data-system-prompt-reset="${profile}" hidden>Restore default</button></footer>
+      <footer><small data-system-prompt-count="${profile}">0 / 8,000</small><button type="button" data-system-prompt-reset="${profile}" hidden data-i18n="system_prompt.restore_default">Restore default</button></footer>
     </div>`;
 }
 
@@ -3042,9 +3038,10 @@ function syncFullscreenState() {
   if (!studio) return;
   studio.root.classList.toggle("is-fullscreen", studio.fullscreen);
   const button = studio.root.querySelector("[data-fullscreen-toggle]");
+  const label = t(studio.fullscreen ? "header.exit_fullscreen" : "header.enter_fullscreen");
   button.setAttribute("aria-pressed", String(studio.fullscreen));
-  button.setAttribute("aria-label", studio.fullscreen ? "Exit fullscreen" : "Enter fullscreen");
-  button.title = studio.fullscreen ? "Exit fullscreen" : "Enter fullscreen";
+  button.setAttribute("aria-label", label);
+  button.title = label;
   button.innerHTML = icon(studio.fullscreen ? "collapse" : "expand", 17);
 }
 
@@ -3055,9 +3052,10 @@ function syncTheme() {
   const button = studio.root.querySelector("[data-theme-toggle]");
   if (!button) return;
   const light = studio.theme === "light";
+  const label = t(light ? "header.theme_dark" : "header.theme_light");
   button.innerHTML = icon(light ? "moon" : "sun", 17);
-  button.setAttribute("aria-label", light ? "Switch to dark theme" : "Switch to light theme");
-  button.title = light ? "Switch to dark theme" : "Switch to light theme";
+  button.setAttribute("aria-label", label);
+  button.title = label;
   button.setAttribute("aria-pressed", String(light));
 }
 
@@ -3085,8 +3083,9 @@ function syncInterfaceSize() {
   }
   if (output) output.textContent = `${size}%`;
   if (button) {
-    button.setAttribute("aria-label", `Interface size ${size}%`);
-    button.title = `Interface size ${size}%`;
+    const label = t("header.interface_size", { size });
+    button.setAttribute("aria-label", label);
+    button.title = label;
   }
 }
 
@@ -3136,17 +3135,17 @@ function createStudio() {
           <img class="h3ps-brandmark" src="${studioBrandIcon}" alt="H3 Prompt Writer">
           <span><strong>H3 Prompt Writer</strong></span>
         </div>
-        <nav class="h3ps-workspaces" aria-label="Writer workspace">
-          <button type="button" data-workspace="video">H3 Video</button>
-          <button type="button" data-workspace="music">Music 3</button>
+        <nav class="h3ps-workspaces" aria-label="${t("header.workspace_nav")}" data-i18n-aria-label="header.workspace_nav">
+          <button type="button" data-workspace="video" data-i18n="header.video_workspace">H3 Video</button>
+          <button type="button" data-workspace="music" data-i18n="header.music_workspace">Music 3</button>
         </nav>
         <div class="h3ps-header-meta">
           <div class="h3ps-guide-picker">
-            <button class="h3ps-guide-button" type="button" aria-expanded="false" data-guide-toggle>Official guides ${icon("chevron", 13)}</button>
-            <div class="h3ps-guide-menu" data-guide-menu hidden><span>Loading guides…</span></div>
+            <button class="h3ps-guide-button" type="button" aria-expanded="false" data-guide-toggle><span data-i18n="header.official_guides">Official guides</span> ${icon("chevron", 13)}</button>
+            <div class="h3ps-guide-menu" data-guide-menu hidden><span data-i18n="header.loading_guides">Loading guides…</span></div>
           </div>
-          <button class="h3ps-guide-button" type="button" data-open-settings-header>Settings</button>
-          ${supportsWorkflowMedia() ? `<button class="h3ps-icon-button" type="button" data-open-floating-media title="Media panel" aria-label="Media panel">${icon("grid", 17)}</button>` : ""}
+          <button class="h3ps-guide-button" type="button" data-open-settings-header data-i18n="settings.title">Settings</button>
+          ${supportsWorkflowMedia() ? `<button class="h3ps-icon-button" type="button" data-open-floating-media title="${t("header.media_panel")}" aria-label="${t("header.media_panel")}" data-i18n-title="header.media_panel" data-i18n-aria-label="header.media_panel">${icon("grid", 17)}</button>` : ""}
           <select class="h3ps-language-select" data-language
             title="${t("common.language")}" aria-label="${t("common.language")}"
             data-i18n-title="common.language" data-i18n-aria-label="common.language">
@@ -3158,25 +3157,25 @@ function createStudio() {
           <div class="h3ps-interface-size-picker" data-interface-size-picker>
             <button class="h3ps-icon-button h3ps-interface-size-button" type="button" title="Interface size 100%" aria-label="Interface size 100%" aria-haspopup="true" aria-expanded="false" data-interface-size-toggle>Aa</button>
             <div class="h3ps-interface-size-menu" data-interface-size-menu hidden>
-              <header><strong>Interface Size</strong><output data-interface-size-value>100%</output></header>
-              <input type="range" min="0" max="3" step="1" value="0" aria-label="Interface size" data-interface-size-range>
+              <header><strong data-i18n="header.interface_size_title">Interface Size</strong><output data-interface-size-value>100%</output></header>
+              <input type="range" min="0" max="3" step="1" value="0" aria-label="Interface size" data-i18n-aria-label="header.interface_size_range" data-interface-size-range>
               <div class="h3ps-interface-size-marks" aria-hidden="true"><span>100%</span><span>110%</span><span>120%</span><span>125%</span></div>
             </div>
           </div>
           <button class="h3ps-icon-button" type="button" title="Enter fullscreen" aria-label="Enter fullscreen" aria-pressed="false" data-fullscreen-toggle>${icon("expand", 17)}</button>
-          <button class="h3ps-icon-button" type="button" title="Close" data-close-studio>${icon("close", 18)}</button>
+          <button class="h3ps-icon-button" type="button" title="Close" data-i18n-title="common.close" data-close-studio>${icon("close", 18)}</button>
         </div>
       </header>
 
       ${settingsMarkup(icon)}
 
       <div class="h3ps-workspace-toolbar" data-generate-view>
-        <nav class="h3ps-modes" role="tablist" aria-label="Generation mode" data-video-modes>
+        <nav class="h3ps-modes" role="tablist" aria-label="${t("workspace.mode_nav")}" data-i18n-aria-label="workspace.mode_nav" data-video-modes>
           ${Object.keys(MODES).map((mode) => `<button type="button" role="tab" data-mode="${mode}">${mode}</button>`).join("")}
         </nav>
         <div class="h3ps-output-toolbar">
           <span data-output-label>Generated prompt</span>
-          <div class="h3ps-output-badges"><button type="button" data-undo-edits hidden>Undo</button></div>
+          <div class="h3ps-output-badges"><button type="button" data-undo-edits data-i18n="workspace.undo" hidden>Undo</button></div>
         </div>
       </div>
 
@@ -3184,20 +3183,20 @@ function createStudio() {
         <section class="h3ps-input-panel">
           <div data-video-inputs>
           <div class="h3ps-section-heading">
-            <span><small>Media</small><strong data-h3ps-mode-title></strong></span>
+            <span><small data-i18n="workspace.media_section">Media</small><strong data-h3ps-mode-title></strong></span>
             <div class="h3ps-section-actions">
               <div class="h3ps-clear-control" data-clear-control>
-                ${splitMenuMarkup(icon, {label: "Actions", primary: "data-actions-menu-toggle", toggle: "data-clear-menu-toggle", menu: "data-clear-menu", ariaLabel: "Media actions", contents: `
-                  ${supportsWorkflowMedia() ? `<button type="button" data-open-floating-media data-media-panel-action disabled title="Add media first"><strong>Media panel</strong><small>ADD TO WORKFLOW</small></button>` : ""}
-                  <button type="button" data-open-composer disabled><strong>Compose</strong><small>Create collage</small></button>
+                ${splitMenuMarkup(icon, {label: '<span data-i18n="workspace.actions">Actions</span>', primary: "data-actions-menu-toggle", toggle: "data-clear-menu-toggle", menu: "data-clear-menu", ariaLabel: "Media actions", ariaLabelKey: "workspace.media_actions", contents: `
+                  ${supportsWorkflowMedia() ? `<button type="button" data-open-floating-media data-media-panel-action disabled title="${t("header.media_panel")}"><strong data-i18n="header.media_panel">Media panel</strong><small data-i18n="workspace.add_to_workflow">ADD TO WORKFLOW</small></button>` : ""}
+                  <button type="button" data-open-composer disabled><strong data-i18n="workspace.compose">Compose</strong><small data-i18n="workspace.create_collage">Create collage</small></button>
                   <hr data-compose-separator>
-                  <button type="button" data-draft-save><strong>Save text draft</strong><small>Download JSON</small></button>
-                  <button type="button" data-draft-load><strong>Load text draft</strong><small>Open JSON</small></button>
+                  <button type="button" data-draft-save><strong data-i18n="workspace.save_draft">Save text draft</strong><small data-i18n="workspace.download_json">Download JSON</small></button>
+                  <button type="button" data-draft-load><strong data-i18n="workspace.load_draft">Load text draft</strong><small data-i18n="workspace.open_json">Open JSON</small></button>
                   <input type="file" accept=".json,application/json" data-draft-file hidden>
                   <hr>
-                  <button type="button" data-clear-action data-clear-media><strong>Clear media</strong><small>Keep prompts</small></button>
-                  <button type="button" data-clear-action data-clear-prompts><strong>Clear prompts</strong><small>Keep media</small></button>
-                  <button class="is-destructive" type="button" data-clear-action data-clear-all><strong>Clear all</strong><small>Media and prompts</small></button>
+                  <button type="button" data-clear-action data-clear-media><strong data-i18n="workspace.clear_media">Clear media</strong><small data-i18n="workspace.keep_prompts">Keep prompts</small></button>
+                  <button type="button" data-clear-action data-clear-prompts><strong data-i18n="workspace.clear_prompts">Clear prompts</strong><small data-i18n="workspace.keep_media">Keep media</small></button>
+                  <button class="is-destructive" type="button" data-clear-action data-clear-all><strong data-i18n="workspace.clear_all">Clear all</strong><small data-i18n="workspace.clear_all_note">Media and prompts</small></button>
                 `})}
               </div>
             </div>
@@ -3206,12 +3205,12 @@ function createStudio() {
           <div class="h3ps-media" data-h3ps-media></div>
 
           <div class="h3ps-control-grid">
-            <label class="h3ps-field h3ps-duration-field"><span>Duration <b data-duration-label>10 seconds</b></span><div><input type="range" min="1" max="20" step="1" value="10" style="--h3ps-range:47.37%" data-duration-slider><i></i></div></label>
+            <label class="h3ps-field h3ps-duration-field"><span><span data-i18n="workspace.duration">Duration</span> <b data-duration-label>10 seconds</b></span><div><input type="range" min="1" max="20" step="1" value="10" style="--h3ps-range:47.37%" data-duration-slider><i></i></div></label>
             ${aspectRatioMarkup(icon)}
           </div>
 
           <label class="h3ps-brief">
-            <span><strong>Creative brief</strong><small>Describe what should happen in the video</small></span>
+            <span><strong data-i18n="workspace.creative_brief">Creative brief</strong><small data-i18n="workspace.creative_brief_hint">Describe what should happen in the video</small></span>
             <textarea spellcheck="true" data-video-brief>Use identity and wardrobe from Picture 1 and the slow lateral camera movement from Video 1. A solitary character waits at a rain-soaked tram stop at blue hour, notices an approaching light and turns into the wind. End on a quiet, unresolved look; keep the shot cinematic, realistic and restrained.</textarea>
             <small class="h3ps-char-count">0 characters</small>
           </label>
@@ -3220,50 +3219,50 @@ function createStudio() {
 
           <div class="h3ps-music-inputs" data-music-inputs hidden>
             <label class="h3ps-brief">
-              <span><strong>Music brief</strong><small>Describe the sound, vocals, mood, arrangement or production</small></span>
+              <span><strong data-i18n="workspace.music_brief">Music brief</strong><small data-i18n="workspace.music_brief_hint">Describe the sound, vocals, mood, arrangement or production</small></span>
               <textarea spellcheck="true" maxlength="2000" data-music-brief>${MUSIC3_DEFAULT_DRAFT.brief}</textarea>
               <small class="h3ps-char-count">0 / 2,000</small>
             </label>
             <label class="h3ps-brief h3ps-lyrics">
-              <span><strong>Lyrics</strong><small>Optional</small></span>
+              <span><strong data-i18n="workspace.lyrics">Lyrics</strong><small data-i18n="workspace.optional">Optional</small></span>
               <textarea spellcheck="true" maxlength="4000" data-music-lyrics placeholder="[Verse 1]&#10;...&#10;&#10;[Chorus]&#10;..."></textarea>
               <small class="h3ps-char-count">0 / 4,000</small>
             </label>
             <div class="h3ps-lyrics-refine-tools">
-              <button class="h3ps-secondary-button" type="button" title="Refine Lyrics with the selected prompt model" data-lyrics-refine-toggle>${icon("spark", 15)} Refine</button>
+              <button class="h3ps-secondary-button" type="button" title="${t("workspace.refine_lyrics_tooltip")}" data-i18n-title="workspace.refine_lyrics_tooltip" data-lyrics-refine-toggle>${icon("spark", 15)} <span data-i18n="workspace.refine">Refine</span></button>
             </div>
             <section class="h3ps-refine h3ps-lyrics-refine" data-lyrics-refine-panel hidden>
               <div class="h3ps-refine-heading">
-                <span><strong>Refine lyrics</strong><small>Create new Lyrics or rewrite the current text</small></span>
-                <label class="h3ps-lyrics-brief-option"><input type="checkbox" data-lyrics-use-brief checked>Use Music Brief</label>
+                <span><strong data-i18n="workspace.refine_lyrics">Refine lyrics</strong><small data-i18n="workspace.refine_lyrics_hint">Create new Lyrics or rewrite the current text</small></span>
+                <label class="h3ps-lyrics-brief-option"><input type="checkbox" data-lyrics-use-brief checked><span data-i18n="workspace.use_music_brief">Use Music Brief</span></label>
               </div>
-              <textarea rows="2" data-lyrics-refine-instruction placeholder="Leave Lyrics empty to create new lyrics, or describe how to rewrite the existing lyrics."></textarea>
+              <textarea rows="2" data-lyrics-refine-instruction placeholder="Leave Lyrics empty to create new lyrics, or describe how to rewrite the existing lyrics." data-i18n-placeholder="workspace.lyrics_refine_placeholder"></textarea>
               <div class="h3ps-refine-actions">
-                <button type="button" class="h3ps-text-button" data-lyrics-refine-restore hidden>Restore previous</button>
+                <button type="button" class="h3ps-text-button" data-lyrics-refine-restore hidden data-i18n="workspace.restore_previous">Restore previous</button>
                 <span></span>
-                <button type="button" class="h3ps-text-button" data-lyrics-refine-cancel>Cancel</button>
-                <button type="button" class="h3ps-refine-submit" data-lyrics-refine-submit>${icon("spark", 13)} Refine</button>
+                <button type="button" class="h3ps-text-button" data-lyrics-refine-cancel data-i18n="common.cancel">Cancel</button>
+                <button type="button" class="h3ps-refine-submit" data-lyrics-refine-submit>${icon("spark", 13)} <span data-i18n="workspace.refine">Refine</span></button>
               </div>
             </section>
             <section class="h3ps-music-system-prompt">
               <button class="h3ps-music-system-prompt-toggle" type="button" data-music-system-prompt-toggle aria-expanded="false">
-                <strong>System prompt</strong>
+                <strong data-i18n="system_prompt.title">System Prompt</strong>
                 <span><em data-music-system-prompt-summary>Default</em>${icon("chevron", 12)}</span>
               </button>
               <div data-music-system-prompt-details hidden>
                 <div class="h3ps-system-prompt-overview" data-music-system-prompt-overview>
                   <button type="button" data-music-system-prompt-profile="music3">
-                    <span><strong>Caption</strong><small>Generated Caption</small></span>
-                    <span><em data-system-prompt-summary-status="music3">Default</em><b>Edit</b>${icon("chevron", 12)}</span>
+                    <span><strong data-i18n="workspace.caption">Caption</strong><small data-i18n="workspace.generated_caption_note">Generated Caption</small></span>
+                    <span><em data-system-prompt-summary-status="music3">Default</em><b data-i18n="common.edit">Edit</b>${icon("chevron", 12)}</span>
                   </button>
                   <button type="button" data-music-system-prompt-profile="music3_lyrics">
-                    <span><strong>Lyrics</strong><small>Create and refine Lyrics</small></span>
-                    <span><em data-system-prompt-summary-status="music3_lyrics">Default</em><b>Edit</b>${icon("chevron", 12)}</span>
+                    <span><strong data-i18n="workspace.lyrics">Lyrics</strong><small data-i18n="workspace.create_refine_lyrics_note">Create and refine Lyrics</small></span>
+                    <span><em data-system-prompt-summary-status="music3_lyrics">Default</em><b data-i18n="common.edit">Edit</b>${icon("chevron", 12)}</span>
                   </button>
                 </div>
                 <div class="h3ps-system-prompt-editor" data-music-system-prompt-editor hidden>
-                  ${musicSystemPromptPanelMarkup("music3", "Caption", "Instructions used to create and refine the structured Music 3 caption.")}
-                  ${musicSystemPromptPanelMarkup("music3_lyrics", "Lyrics", "Instructions used to create new Lyrics or rewrite the current Lyrics.", true)}
+                  ${musicSystemPromptPanelMarkup("music3", "workspace.caption", "system_prompt.music3_description")}
+                  ${musicSystemPromptPanelMarkup("music3_lyrics", "workspace.lyrics", "system_prompt.music3_lyrics_description", true)}
                 </div>
               </div>
             </section>
@@ -3272,7 +3271,7 @@ function createStudio() {
           ${generateModelSummaryMarkup(icon)}
         </section>
 
-        <section class="h3ps-output-panel" aria-label="Generated result">
+        <section class="h3ps-output-panel" aria-label="${t("workspace.generated_result")}" data-i18n-aria-label="workspace.generated_result">
           <div class="h3ps-output-mobile-toolbar" aria-hidden="true"><span data-output-mobile-label>Generated prompt</span></div>
           <div class="h3ps-editor-wrap">
             <div class="h3ps-editor-highlight" data-prompt-highlights aria-hidden="true"></div>
@@ -3284,16 +3283,16 @@ function createStudio() {
             <div class="h3ps-refine-heading">
               <span><strong data-refine-title>Refine prompt</strong><small><span data-refine-helper>Describe only what should change</span><em data-refine-media-note>No media re-upload</em></small></span>
               <div class="h3ps-refine-heading-actions">
-                <button type="button" class="h3ps-text-button" data-refine-restore hidden>Restore original</button>
-                <button type="button" class="h3ps-text-button" data-refine-cancel>Cancel</button>
-                <button type="button" class="h3ps-refine-submit" data-refine-submit>${icon("spark", 13)} Refine</button>
+                <button type="button" class="h3ps-text-button" data-refine-restore hidden data-i18n="workspace.restore_original">Restore original</button>
+                <button type="button" class="h3ps-text-button" data-refine-cancel data-i18n="common.cancel">Cancel</button>
+                <button type="button" class="h3ps-refine-submit" data-refine-submit>${icon("spark", 13)} <span data-i18n="workspace.refine">Refine</span></button>
               </div>
             </div>
-            <textarea rows="2" data-refine-instruction placeholder="For example: make the camera movement slower and keep the ending more ambiguous."></textarea>
+            <textarea rows="2" data-refine-instruction placeholder="For example: make the camera movement slower and keep the ending more ambiguous." data-i18n-placeholder="workspace.refine_placeholder"></textarea>
           </div>
           <div class="h3ps-output-actions">
             <span class="h3ps-output-primary-actions">
-              <button class="h3ps-secondary-button" type="button" title="Refine with local LLM" data-refine-toggle>${icon("spark", 15)} Refine</button>
+              <button class="h3ps-secondary-button" type="button" title="${t("workspace.refine_tooltip")}" data-i18n-title="workspace.refine_tooltip" data-refine-toggle>${icon("spark", 15)} <span data-i18n="workspace.refine">Refine</span></button>
             </span>
             ${copyButtonMarkup(icon, "data-copy", '<span data-copy-label>Copy prompt</span>')}
           </div>
@@ -3302,14 +3301,14 @@ function createStudio() {
 
       <footer class="h3ps-footer" data-generate-view>
         <div class="h3ps-footer-memory-actions">
-          <button class="h3ps-memory-action" type="button" data-comfy-memory-action title="Unload models held by ComfyUI without clearing cached workflow results">${icon("memory", 15)}Free ComfyUI VRAM</button>
+          <button class="h3ps-memory-action" type="button" data-comfy-memory-action title="${t("generation.free_vram_tooltip")}" data-i18n-title="generation.free_vram_tooltip">${icon("memory", 15)}<span data-i18n="workspace.free_comfy_vram">Free ComfyUI VRAM</span></button>
           <span class="h3ps-prompt-lifecycle-actions" data-prompt-lifecycle-actions></span>
         </div>
         <div class="h3ps-status is-busy" role="status" aria-live="polite" aria-atomic="true" data-status hidden><span><strong></strong><small data-status-detail></small></span></div>
         <div class="h3ps-footer-actions">
           <span class="h3ps-generation-options">
             <label class="h3ps-toggle-control"><input type="checkbox" data-thinking><span></span>Thinking</label>
-            <label class="h3ps-toggle-control" data-keep-loaded-control title="Keep the prompt model in VRAM for the next prompt"><input type="checkbox" data-keep-loaded><span></span>Keep model loaded</label>
+            <label class="h3ps-toggle-control" data-keep-loaded-control title="${t("workspace.keep_model_loaded_tooltip")}" data-i18n-title="workspace.keep_model_loaded_tooltip"><input type="checkbox" data-keep-loaded><span></span><span class="h3ps-toggle-label" data-i18n="workspace.keep_model_loaded">Keep model loaded</span></label>
             ${autoVramControlMarkup(VRAM_HANDOFF_SUPPORTED)}
           </span>
           <button class="h3ps-primary-button" type="button" data-generate>${icon("spark", 16)}<span data-generate-label>Generate prompt</span></button>
@@ -3318,12 +3317,12 @@ function createStudio() {
     </section>
 
     <div class="h3ps-other-models-backdrop" aria-hidden="true" data-other-models-backdrop hidden></div>
-    <section class="h3ps-other-models-popover" role="dialog" aria-label="Other verified models" data-other-models-popover hidden>
-      <header><span><strong>Other verified models</strong><small>Recommended GGUF and projector pairs</small></span><button class="h3ps-icon-button" type="button" aria-label="Close verified models" data-other-models-close>${icon("close", 16)}</button></header>
+    <section class="h3ps-other-models-popover" role="dialog" aria-label="${t("workspace.other_models")}" data-i18n-aria-label="workspace.other_models" data-other-models-popover hidden>
+      <header><span><strong data-i18n="workspace.other_models">Other verified models</strong><small data-i18n="workspace.recommended_pairs">Recommended GGUF and projector pairs</small></span><button class="h3ps-icon-button" type="button" aria-label="${t("workspace.close_other_models")}" data-i18n-aria-label="workspace.close_other_models" data-other-models-close>${icon("close", 16)}</button></header>
       <div class="h3ps-other-models-catalog" data-other-models-catalog></div>
     </section>
 
-    <div class="h3ps-toast" role="status" aria-live="polite" aria-atomic="true" data-h3ps-toast><span class="h3ps-toast-icon">${icon("info", 17)}</span><span><strong data-toast-title>Notice</strong><span data-toast-message></span><button type="button" class="h3ps-toast-action" data-toast-action hidden></button><details data-toast-details hidden><summary>Technical details</summary><pre></pre></details></span></div>`;
+    <div class="h3ps-toast" role="status" aria-live="polite" aria-atomic="true" data-h3ps-toast><span class="h3ps-toast-icon">${icon("info", 17)}</span><span><strong data-toast-title>Notice</strong><span data-toast-message></span><button type="button" class="h3ps-toast-action" data-toast-action hidden></button><details data-toast-details hidden><summary data-i18n="common.technical_details">Technical details</summary><pre></pre></details></span></div>`;
   document.body.appendChild(root);
   configureI18n({
     preference: initialPreferences?.language || "auto",
@@ -3389,7 +3388,7 @@ function createStudio() {
   const durationSlider = root.querySelector("[data-duration-slider]");
   durationSlider.value = String(studio.durationSeconds);
   durationSlider.style.setProperty("--h3ps-range", `${(studio.durationSeconds - 1) / 19 * 100}%`);
-  root.querySelector("[data-duration-label]").textContent = `${studio.durationSeconds} seconds`;
+  root.querySelector("[data-duration-label]").textContent = t("workspace.duration_seconds", { seconds: studio.durationSeconds });
   studio.aspectControl = bindAspectRatio(root.querySelector('[data-choice-toggle="aspect"]').closest(".h3ps-choice"), studio.aspectRatio, value => {
     studio.aspectRatio = value;
     saveUserPreferences(localStorage, studio);
@@ -3530,7 +3529,7 @@ function createStudio() {
 
   root.querySelector("[data-duration-slider]").addEventListener("input", (event) => {
     studio.durationSeconds = Number(event.target.value);
-    root.querySelector("[data-duration-label]").textContent = `${studio.durationSeconds} seconds`;
+    root.querySelector("[data-duration-label]").textContent = t("workspace.duration_seconds", { seconds: studio.durationSeconds });
     event.target.style.setProperty("--h3ps-range", `${(studio.durationSeconds - 1) / 19 * 100}%`);
     saveUserPreferences(localStorage, studio);
   });

@@ -2,9 +2,10 @@ import "./focus_lifecycle.mjs";
 import "./reference_labels.mjs";
 import "./draft_files.mjs";
 import "./desktop_notifications.mjs";
+import { Window } from "happy-dom";
 import { generationButtonMarkup } from "../web/writer_controls.js";
 import { aspectRatioMarkup, splitMenuMarkup } from "../web/writer_controls.js";
-import { msg, t } from "../web/i18n.js";
+import { configureI18n, msg, t } from "../web/i18n.js";
 import { writeToastContent } from "../web/toast.js";
 import { writeStatusContent } from "../web/status.js";
 import { settingsMarkup, generateModelSummaryMarkup } from "../web/settings.js";
@@ -774,9 +775,9 @@ test("clear prompts removes brief and generated output while preserving lyrics a
     lyrics: "[Verse]\nKeep these lyrics",
     marker: "preserved",
   });
-  assert.match(mainSource, /data-clear-media><strong>Clear media<\/strong>/);
-  assert.match(mainSource, /data-clear-prompts><strong>Clear prompts<\/strong><small>Keep media<\/small>/);
-  assert.match(mainSource, /data-clear-all><strong>Clear all<\/strong><small>Media and prompts<\/small>/);
+  assert.match(mainSource, /data-clear-media><strong data-i18n="workspace\.clear_media">Clear media<\/strong>/);
+  assert.match(mainSource, /data-clear-prompts><strong data-i18n="workspace\.clear_prompts">Clear prompts<\/strong><small data-i18n="workspace\.keep_media">Keep media<\/small>/);
+  assert.match(mainSource, /data-clear-all><strong data-i18n="workspace\.clear_all">Clear all<\/strong><small data-i18n="workspace\.clear_all_note">Media and prompts<\/small>/);
   assert.match(mainSource, /if \(!await clearCurrentMedia\(\{ notify: false \}\)\) return;/);
   assert.match(stylesSource, /\.h3ps-clear-control \{[^}]*display: inline-flex;[^}]*border-radius: 7px;/);
   assert.match(stylesSource, /\.h3ps-clear-menu \{[^}]*right: -20px;[^}]*width: max-content;[^}]*max-width: calc\(100vw - 24px\);/);
@@ -894,8 +895,8 @@ test("studio state owns model, runtime, lifecycle, and System Prompt settings", 
 });
 
 test("Reference assets replace one dropped file and append multiple dropped files", () => {
-  assert.match(mainSource, /class="h3ps-replace-asset"[^>]*data-replace-asset="\$\{asset\.id\}"[^>]*aria-label="Replace[^>]*>\$\{icon\("refresh", 12\)\}<\/button>/);
-  assert.match(mainSource, /class="h3ps-remove-asset"[^>]*data-remove-asset="\$\{asset\.id\}"/);
+  assert.match(mainSource, /class="h3ps-replace-asset"[^>]*data-replace-asset="\$\{asset\.id\}"[^>]*aria-label="\$\{t\("media\.replace", \{ name: assetName \}\)\}"/);
+  assert.match(mainSource, /class="h3ps-remove-asset"[^>]*data-remove-asset="\$\{asset\.id\}"[^>]*aria-label="\$\{t\("media\.remove", \{ name: assetName \}\)\}"/);
   assert.doesNotMatch(mainSource, /data-asset-menu|data-asset-menu-toggle|data-preview-asset|icon\("dots"/);
   assert.doesNotMatch(mainSource, /asset\.mode !== "Reference"[^\n]+data-replace-asset/);
   assert.match(mainSource, /input\.multiple = !replaceAssetId/);
@@ -924,7 +925,7 @@ test("media card overlays stay inside the thumbnail and below previews", () => {
 
 test("Actions keeps media tools ordered and explains unavailable states without hiding Compose", async () => {
   const { mediaVisualDescriptor } = await import("../web/media_visual.js");
-  const markup = mainSource.slice(mainSource.indexOf('${splitMenuMarkup(icon, {label: "Actions"'), mainSource.indexOf('<p class="h3ps-section-hint"'));
+  const markup = mainSource.slice(mainSource.indexOf('${splitMenuMarkup(icon, {label:'), mainSource.indexOf('<p class="h3ps-section-hint"'));
   assert.match(markup, /data-media-panel-action[\s\S]*data-open-composer[\s\S]*<hr data-compose-separator>[\s\S]*data-clear-media[\s\S]*data-clear-prompts[\s\S]*data-clear-all/);
   assert.doesNotMatch(markup, /data-open-composer[^>]*hidden|data-compose-separator[^>]*hidden/);
   assert.match(stylesSource, /\.h3ps-clear-menu button:disabled \{ opacity: .45; cursor: default;/);
@@ -933,7 +934,7 @@ test("Actions keeps media tools ordered and explains unavailable states without 
     querySelector: selector => selector === "[data-media-panel-action]" ? panel : compose,
   } };
   const controlSource = mainSource.slice(mainSource.indexOf("function referenceComposerAssets("), mainSource.indexOf("async function addComposedPicture("));
-  const sync = new Function("studio", "mediaVisualDescriptor", controlSource + ";return syncComposerControl;")(studio, mediaVisualDescriptor);
+  const sync = new Function("studio", "mediaVisualDescriptor", "t", controlSource + ";return syncComposerControl;")(studio, mediaVisualDescriptor, t);
   sync();
   assert.equal(panel.disabled, true); assert.equal(panel.title, "Add media first");
   assert.equal(compose.disabled, true); assert.equal(compose.title, "Add a Picture or Video first");
@@ -1495,16 +1496,16 @@ test("Music 3 drafts and payload keep lyrics separate from H3 state", () => {
   assert.match(mainSource, /data-music-system-prompt-summary>Default/);
   assert.match(mainSource, /data-music-system-prompt-details hidden/);
   assert.doesNotMatch(mainSource, /Prompt behavior · shared by all providers/);
-  assert.match(mainSource, /Object\.hasOwn\(studio\.customSystemPrompts, "music3"\)[\s\S]{0,140}Object\.hasOwn\(studio\.customSystemPrompts, "music3_lyrics"\)[\s\S]{0,100}"Custom"/);
+  assert.match(mainSource, /Object\.hasOwn\(studio\.customSystemPrompts, "music3"\)[\s\S]{0,220}t\("settings\.custom"\)/);
   assert.match(mainSource, /data-system-prompt="\$\{profile\}"/);
-  assert.match(mainSource, /musicSystemPromptPanelMarkup\("music3", "Caption"/);
-  assert.match(mainSource, /musicSystemPromptPanelMarkup\("music3_lyrics", "Lyrics"/);
-  assert.match(mainSource, /data-system-prompt-reset="\$\{profile\}" hidden>Restore default/);
+  assert.match(mainSource, /musicSystemPromptPanelMarkup\("music3", "workspace\.caption"/);
+  assert.match(mainSource, /musicSystemPromptPanelMarkup\("music3_lyrics", "workspace\.lyrics"/);
+  assert.match(mainSource, /data-system-prompt-reset="\$\{profile\}" hidden data-i18n="system_prompt\.restore_default">Restore default/);
   assert.match(mainSource, /### Global Metadata[\s\S]*### Vocal Details[\s\S]*### Arrangement/);
   assert.doesNotMatch(mainSource, /global_metadata:/);
-  assert.match(mainSource, /Refine caption/);
-  assert.match(mainSource, /Generated caption/);
-  assert.match(mainSource, /data-lyrics-refine-toggle>[\s\S]{0,80}Refine<\/button>/);
+  assert.match(mainSource, /t\("workspace\.refine_caption"\)/);
+  assert.match(mainSource, /t\("workspace\.generated_caption"\)/);
+  assert.match(mainSource, /data-lyrics-refine-toggle>[\s\S]{0,120}data-i18n="workspace\.refine">Refine<\/span>/);
   assert.match(mainSource, /Leave Lyrics empty to create new lyrics, or describe how to rewrite the existing lyrics\./);
   assert.match(mainSource, /data-lyrics-use-brief checked/);
   assert.doesNotMatch(mainSource, /data-(?:lyrics-)?refine-submit[^>]*>[\s\S]{0,80}Rewrite<\/button>/);
@@ -1657,7 +1658,7 @@ test("runtime pickers and the verified-model dialog keep keyboard state in sync"
   assert.match(mainSource, /function setRuntimeMenuOpen\(name, open, restoreFocus = false\)/);
   assert.match(mainSource, /else if \(runtimeMenu\) setRuntimeMenuOpen\(runtimeMenu\.dataset\.runtimeMenu, false, true\)/);
   assert.match(mainSource, /data-other-models-backdrop[^>]*hidden/);
-  assert.match(mainSource, /role="dialog" aria-label="Other verified models"/);
+  assert.match(mainSource, /role="dialog" aria-label="\$\{t\("workspace\.other_models"\)\}" data-i18n-aria-label="workspace\.other_models"/);
   assert.match(styleSources.overlays, /\.h3ps-other-models-backdrop\s*\{[^}]*position:\s*fixed;[^}]*z-index:\s*119;/);
   assert.doesNotMatch(styleSources.overlays, /100vmax/);
 });
@@ -1689,7 +1690,7 @@ test("prompt refinement keeps actions above a vertically resizable editor", () =
 
 test("refined media UI has neutral actions, no dead preview flow or reorder thumbnail ghost",()=>{
   assert.match(splitMenuMarkup(()=>"",{label:"Actions",primary:"data-actions-menu-toggle",toggle:"data-clear-menu-toggle",menu:"data-clear-menu",contents:"",ariaLabel:"Media actions"}),/data-actions-menu-toggle[^>]*>Actions/);
-  assert.match(mainSource,/splitMenuMarkup\(icon, \{label: "Actions"/);
+  assert.match(mainSource,/splitMenuMarkup\(icon, \{label: '<span data-i18n="workspace\.actions">Actions<\/span>'/);
   assert.doesNotMatch(mainSource,/h3ps-compose-button|openVideoPreview|openImagePreview|resampleCurrentVideo|h3ps-drag-ghost/);
   assert.match(mainSource,/ghost.width = ghost.height = 1/);
   assert.match(mainSource,/setDragImage\(ghost, 0, 0\)/);
@@ -1741,7 +1742,7 @@ test("locale refresh never fetches or overwrites System Prompt editors", async (
     return { textarea, status, summaryStatus, reset, count, root: { querySelector: selector => map.get(selector) } };
   };
   const build = () => new Function(
-    "studio", "getSystemPrompt", "showToast", "resizeSystemPromptEditor", "syncMusicSystemPromptSummary",
+    "studio", "getSystemPrompt", "showToast", "resizeSystemPromptEditor", "syncMusicSystemPromptSummary", "t",
     mainSource.slice(start, end) + ";return syncSystemPromptEditor;",
   );
 
@@ -1755,6 +1756,7 @@ test("locale refresh never fetches or overwrites System Prompt editors", async (
     () => { toasts += 1; },
     () => {},
     () => {},
+    t,
   );
   await refreshingSync("standard");
   assert.equal(refreshing.textarea.value, "keep me");
@@ -1771,6 +1773,7 @@ test("locale refresh never fetches or overwrites System Prompt editors", async (
     () => {},
     () => {},
     () => {},
+    t,
   );
   await fetchedSync("standard");
   assert.equal(calls, 1);
@@ -1798,4 +1801,76 @@ test("long Writer model requests opt out of the ComfyUI 60s fetch timeout",async
   await context.__api.refine({});
   assert.equal(calls.find(call=>call.path==="/h3studio/generate").options.timeoutMs,null);
   assert.equal(calls.find(call=>call.path==="/h3studio/refine").options.timeoutMs,null);
+});
+
+test("generation metadata and shared labels follow the active locale", () => {
+  const window = new Window();
+  const root = window.document.createElement("div");
+  window.document.body.append(root);
+  const output = window.document.createElement("textarea");
+  output.dataset.output = "";
+  const meta = window.document.createElement("span");
+  const metaWrap = window.document.createElement("div");
+  metaWrap.className = "h3ps-editor-meta";
+  metaWrap.append(meta);
+  root.append(output, metaWrap);
+
+  const start = mainSource.indexOf("function countWords(");
+  const end = mainSource.indexOf("function newGenerationSeed(", start);
+  const studio = { root };
+  const helpers = new Function(
+    "t",
+    "studio",
+    `${mainSource.slice(start, end)};return { promptLengthMeta, formatGenerationMeta, syncOutputLengthMeta };`,
+  )(t, studio);
+  const result = {
+    prompt: "one two",
+    model_load_seconds: 1,
+    media_processing_seconds: 0.5,
+    generation_seconds: 2,
+    total_seconds: 3,
+    tokens_per_second: 4.5,
+  };
+
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
+  assert.equal(helpers.promptLengthMeta("one two"), "7 characters · 2 words");
+  assert.equal(
+    helpers.formatGenerationMeta(result),
+    "7 characters · 2 words · 3.0s total (1.0s load · 0.5s media · 2.0s LLM) · 4.5 tok/s",
+  );
+  output.value = "one two three";
+  meta.textContent = helpers.formatGenerationMeta(result);
+  helpers.syncOutputLengthMeta();
+  assert.equal(
+    meta.textContent,
+    "13 characters · 3 words · 3.0s total (1.0s load · 0.5s media · 2.0s LLM) · 4.5 tok/s",
+  );
+
+  configureI18n({ preference: "zh-CN", root });
+  assert.equal(helpers.promptLengthMeta("one two"), "7 字符 · 2 词");
+  assert.equal(
+    helpers.formatGenerationMeta(result),
+    "7 字符 · 2 词 · 3.0s 总计（1.0s 加载 · 0.5s 媒体 · 2.0s LLM） · 4.5 tok/s",
+  );
+  meta.textContent = helpers.formatGenerationMeta(result);
+  helpers.syncOutputLengthMeta();
+  assert.equal(
+    meta.textContent,
+    "13 字符 · 3 词 · 3.0s 总计（1.0s 加载 · 0.5s 媒体 · 2.0s LLM） · 4.5 tok/s",
+  );
+  const actions = splitMenuMarkup(() => "", {
+    label: "Actions",
+    primary: "",
+    toggle: "",
+    menu: "",
+    contents: "",
+    ariaLabelKey: "workspace.media_actions",
+  });
+  assert.match(actions, /aria-label="媒体操作" data-i18n-aria-label="workspace\.media_actions"/);
+
+  assert.match(mainSource, /data-i18n="header\.official_guides"/);
+  assert.match(mainSource, /data-i18n="workspace\.creative_brief"/);
+  assert.match(mainSource, /titleKey: "mode\.T2VA\.title"/);
+  assert.match(mainSource, /t\("workspace\.generated_caption"\)/);
+  configureI18n({ preference: "en", root, navigatorLanguage: "en-US" });
 });
